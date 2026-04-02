@@ -23,13 +23,18 @@ import websocket
 import base64
 import json
 
+
+HOST = '127.0.0.1' # Был "130.12.45.26" 
+PORT = 8765 
+
 if platform == "android":
     DOWNLOAD_DIR = "/storage/emulated/0/Downloads/Arlene Colloquium"
 else:
     DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-WEBSOCKET_URL = "ws://130.12.45.26:8765"  # поменяй на адрес твоего сервера
+
+WEBSOCKET_URL = f"ws://{HOST}:{PORT}"
 HISTORY_FILE = os.path.join(DOWNLOAD_DIR, "chat_history.json")
 TOKEN_FILE = os.path.join(DOWNLOAD_DIR, "token.txt")
 

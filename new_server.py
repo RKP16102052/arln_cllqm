@@ -1,0 +1,420 @@
+import websockets
+import asyncio
+import json
+import validators
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import random
+import uuid
+import time
+import datetime
+import os
+
+from data.__all_models import User, TempUser, Chat
+from data import db_session
+
+from cryptography.fernet import Fernet
+
+
+HOST = '127.0.0.1' # Был "130.12.45.26" 
+PORT = 8765 
+EMAIL = 'arlenemessengerg@gmail.com'
+EMAIL_PASS = 'pzzo urrd hjej arpw'
+FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
+CHATS_LOCATION = 'chats/data'
+
+connected_clients = set()
+email_server = None
+CHATS_LOCATION = CHATS_LOCATION.rstrip('/')
+
+
+def reg_verification(data: dict):
+    nickname = data.get('nickname', None)
+    email = data.get('email', None)
+    password = data.get('password', None)
+
+    if nickname is None or email is None or password is None:
+        return {"action": "register", "status": "error", "message": "Неправильный формат"}
+
+    if type(nickname) is not str or type(email) is not str or type(password) is not str:
+        return {"action": "register", "status": "error", "message": "Неправильный формат"}
+
+    if not validators.email(email):
+        return {"action": "register", "status": "error", "message": "Неправильная почта"}
+
+    session = db_session.create_session()
+
+    if session.query(User).filter(User.name == nickname).all():
+        session.close()
+        return {"action": "register", "status": "error", "message": "Такое имя пользователя уже занято"}
+
+    if session.query(User).filter(User.email == email).all():
+        session.close()
+        return {"action": "register", "status": "error", "message": "Пользователь с такой почтой уже зарегистрирован"}
+
+    session.close()
+
+    code = random.randint(100000, 999999)
+    die_time = int(time.time()) + 600
+    token = uuid.uuid4().hex
+
+    message = MIMEMultipart()
+    message["From"] = EMAIL
+    message["To"] = email
+    message["Subject"] = "Verification code"
+    body = 'Ваш код подтверждения: ' + str(code)
+    message.attach(MIMEText(body, "plain"))
+    body = 'Этот код будет действителен в течение 10 минут.'
+    message.attach(MIMEText(body, "plain"))
+
+    send_email(message)
+
+    session = db_session.create_session()
+
+    temp_user = session.query(TempUser).filter(TempUser.email == email).first()
+
+    if temp_user is not None:
+        temp_user.email = email
+        temp_user.name = nickname
+        temp_user.hashed_password = password
+        temp_user.token = token
+        temp_user.verification_code = code
+        temp_user.die_time = die_time
+
+        session.commit()
+        session.close()
+    else:
+        temp_user = TempUser()
+
+        temp_user.email = email
+        temp_user.name = nickname
+        temp_user.hashed_password = password
+        temp_user.token = token
+        temp_user.verification_code = code
+        temp_user.die_time = die_time
+
+        session.add(temp_user)
+        session.commit()
+        session.close()
+
+    return {"action": "register", "status": "OK", "token": token, "message": "Отправка кода подтверждения."}
+
+
+def fin_reg(data: dict):
+    token = data.get('token', None)
+    code = data.get('code', None)
+    key = data.get('key', None)
+
+    if token is None or code is None or key is None:
+        return {"action": "register_verification", "status": "error", "message": "Неправильный формат"}
+
+    session = db_session.create_session()
+
+    temp_user = session.query(TempUser).filter(TempUser.token == token).first()
+
+    session.close()
+
+    if temp_user is None:
+        return {"action": "register_verification", "status": "error", "message": "Неправильный формат"}
+
+    if temp_user.verification_code != code:
+        return {"action": "register_verification", "status": "error", "message": "Неверный код"}
+
+    user = User()
+    user.name = temp_user.name
+    user.email = temp_user.email
+    user.token = temp_user.token
+    user.hashed_password = temp_user.hashed_password
+    user.public_key = key
+
+    session = db_session.create_session()
+    session.delete(temp_user)
+    session.add(user)
+    session.commit()
+    session.close()
+
+    return {"action": "register_verification", "status": "OK", "message": "Успех"}
+
+
+def login(data: dict):
+    email = data.get('email', None)
+    password = data.get('password', None)
+    
+    if email is None or password is None:
+        return {"action": "login", "status": "error", "message": "Неверный формат"}
+    
+    session = db_session.create_session()
+    user = session.query(User).filter(User.email == email).first()
+
+    if user is None:
+        session.close()
+        return {"action": "login", "status": "error", "message": "Такой пользователь не зарегестрирован"}
+
+    if not user.hashed_password == password:
+        session.close()
+        return {"action": "login", "status": "error", "message": "Неверный пароль"}
+
+    token = user.token
+    session.close()
+
+    return {"action": "login", "status": "OK", "message": "Успех", "token": token}
+
+
+def create_chat_with_user(data: dict):
+    token = data.get('token', None)
+    username = data.get('username', None)
+
+    if token is None or username is None:
+        return {"action": "create_chat_with_user", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+
+    main_user = session.query(User).filter(User.token == token).first()
+
+    if main_user is None:
+        session.close()
+        return {"action": "create_chat_with_user", "status": "error", "message": "Неверный токен"}
+
+    user = session.query(User).filter(User.name == username).first()
+
+    if user is None:
+        session.close()
+        return {"action": "create_chat_with_user", "status": "error", "message": "Неверное имя пользователя"}
+
+    members = f'{main_user.id};{user.id}'
+    other_members = f'{user.id};{main_user.id}'
+    created_by = main_user.id
+    is_private = True
+
+    chat = session.query(Chat).filter(Chat.is_private == True, (Chat.members == members) | (Chat.members == other_members)).first()
+
+    if chat is not None:
+        session.close()
+        return {"action": "create_chat_with_user", "status": "OK", "message": "Чат уже был создан", "id": chat.id}
+
+    chat = Chat()
+
+    chat.members = members
+    chat.created_by = created_by
+    chat.is_private = is_private
+
+    session.add(chat)
+    session.commit()
+
+    if user.chats is None:
+        user.chats = str(chat.id)
+    else:
+        user.chats = ';'.join(user.chats.split(';') + [str(chat.id)])
+
+    if main_user.chats is None:
+        main_user.chats = str(chat.id)
+    else:
+        main_user.chats = ';'.join(main_user.chats.split(';') + [str(chat.id)])
+
+    chat_id = chat.id
+
+    session.commit()
+    session.close()
+
+    with open(CHATS_LOCATION + '/' + str(chat_id) + '.json', 'w', encoding='UTF-8') as file:
+        json.dump({'data': []}, file)
+
+    return {"action": "create_chat_with_user", "status": "OK", "message": "Успех", "id": chat_id}
+
+
+def get_public_key(data: dict):
+    token = data.get('token', None)
+    username = data.get('username', None)
+
+    if token is None or username is None:
+        return {"action": "get_public_key", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+
+    user = session.query(User).filter(User.token == token).first()
+
+    if user is None:
+        session.close()
+        return {"action": "get_public_key", "status": "error", "message": "Неверный токен"}
+
+    public_key = session.query(User).filter(User.name == username).first()
+
+    if public_key is None:
+        session.close()
+        return {"action": "get_public_key", "status": "error", "message": "Неверное имя пользователя"}
+
+    public_key = public_key.public_key
+
+    session.close()
+
+    return {"action": "get_public_key", "status": "OK", "message": "Успех", "public_key": public_key}
+
+
+def send_message(data: dict):
+    token = data.get('token', None)
+    message = data.get('message', None)
+    chat_id = data.get('chat_id', None)
+    to_username = data.get('to_username', None)
+
+    if token is None or message is None or chat_id is None or to_username is None:
+        return {"action": "send_message", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+
+    chat = session.query(Chat).filter(Chat.id == chat_id).first()
+
+    if chat is None:
+        session.close()
+        return {"action": "send_message", "status": "error", "message": "Неверный id чата"}
+
+    members = chat.members
+
+    user1 = session.query(User).filter(User.token == token).first()
+
+    if user1 is None:
+        session.close()
+        return {"action": "send_message", "status": "error", "message": "Неверный токен"}
+
+    user2 = session.query(User).filter(User.name == to_username).first()
+
+    if user2 is None:
+        session.close()
+        return {"action": "send_message", "status": "error", "message": "Неверный токен"}
+
+    if str(user1.id) not in members or str(user2.id) not in members:
+        session.close()
+        return {"action": "send_message", "status": "error", "message": "Недостаточно прав"}
+
+    with open(CHATS_LOCATION + '/' + str(chat_id) + '.json', 'r', encoding='UTF-8') as file:
+        chat_data = json.load(file)
+
+    with open(CHATS_LOCATION + '/' + str(chat_id) + '.json', 'w', encoding='UTF-8') as file:
+        datet = datetime.datetime.now()
+
+        time_now = str(datet.hour) + ':' + str(datet.minute)
+        date_now = str(datet.day) + '.' + str(datet.month) + '.' + str(datet.year)
+
+        chat_message = {'from': user1.name,
+                        'to': user2.token,
+                        'message': message,
+                        'time': time_now,
+                        'date': date_now}
+
+        chat_data['data'].append(chat_message)
+
+        json.dump(chat_data, file, indent=4)
+
+    return {"action": "send_message", "status": "OK", "message": message, "chat_id": chat_id}
+
+
+def get_messages(data: dict):
+    token = data.get('token', None)
+    chat_id = data.get('chat_id', None)
+
+    if token is None or chat_id is None:
+        return {"action": "get_messages", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+
+    user = session.query(User).filter(User.token == token).first()
+
+    if user is None:
+        session.close()
+        return {"action": "get_messages", "status": "error", "message": "Неверный токен"}
+
+    if str(chat_id) not in user.chats:
+        session.close()
+        return {"action": "get_messages", "status": "error", "message": "Недостаточно прав"}
+
+    with open(CHATS_LOCATION + '/' + str(chat_id) + '.json', 'r', encoding='UTF-8') as file:
+        chat_data = json.load(file)
+
+    fin = []
+
+    for i in chat_data['data']:
+        if i['to'] == token:
+            fin.append({"from": i["from"], "message": i["message"], "time": i["time"], "date": i["date"]})
+
+    session.close()
+
+    return {"action": "get_messages", "status": "OK", "message": "Успех", "chat_id": chat_id, "data": fin}
+
+
+def get_name(data: dict):
+    token = data.get('token', None)
+
+    if token is None:
+        return {"action": "get_name", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+
+    user = session.query(User).filter(User.token == token).first()
+
+    if user is None:
+        session.close()
+        return {"action": "get_name", "status": "error", "message": "Неверный токен"}
+
+    name = user.name
+
+    session.close()
+
+    return {"action": "get_name", "status": "OK", "message": "Успех", "name": name}
+
+
+async def handler(websocket):
+    connected_clients.add(websocket)
+    try:
+        async for raw in websocket:
+            data = json.loads(FERNET_KEY.decrypt(raw).decode())
+            print(data)
+            action = data.get('action', None)
+
+            if action == 'register':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(reg_verification(data), ensure_ascii=False).encode()))
+            elif action == 'register_verification':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(fin_reg(data), ensure_ascii=False).encode()))
+            elif action == 'login':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(login(data), ensure_ascii=False).encode()))
+            elif action == 'create_chat_with_user':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(create_chat_with_user(data), ensure_ascii=False).encode()))
+            elif action == 'get_public_key':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_public_key(data), ensure_ascii=False).encode()))
+            elif action == 'send_message':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(send_message(data), ensure_ascii=False).encode()))
+            elif action == 'get_messages':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_messages(data), ensure_ascii=False).encode()))
+            elif action == 'get_name':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_name(data), ensure_ascii=False).encode()))
+            else:
+                await websocket.send(json.dumps({"status": "error", "message": "Неизвестное действие"}, ensure_ascii=False))
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    finally:
+        connected_clients.discard(websocket)
+
+
+def start_email_server():
+    global email_server
+
+    email_server = smtplib.SMTP('smtp.gmail.com', 587)
+    email_server.starttls()
+    email_server.login(EMAIL, EMAIL_PASS)
+
+
+def send_email(message: MIMEMultipart):
+    email_server.sendmail(message["From"], message["To"], message.as_string())
+
+
+async def main():
+    db_session.global_init('db/main.db')
+    start_email_server()
+
+    async with websockets.serve(handler, HOST, PORT):
+        print(f"WS сервер запущен на ws://{HOST}:{PORT}")
+        print("Ожидание подключений...")
+        await asyncio.Future()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

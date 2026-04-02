@@ -8,6 +8,10 @@ import base64
 import hashlib
 import time
 
+
+HOST = '127.0.0.1' # Был "130.12.45.26" 
+PORT = 8765 
+
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -295,8 +299,8 @@ async def main():
     load_messages()
     print(f"Загружено {len(message_history)} сообщений из истории")
 
-    async with websockets.serve(handler, "130.12.45.26", 8765):
-        print("WS сервер запущен на ws://130.12.45.26:8765")
+    async with websockets.serve(handler, HOST, PORT):
+        print(f"WS сервер запущен на ws://{HOST}:{PORT}")
         print("Ожидание подключений...")
         await asyncio.Future()
 
