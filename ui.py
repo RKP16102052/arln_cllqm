@@ -28,9 +28,8 @@ import json
 import os
 import base64
 
-
-HOST = '127.0.0.1' # Был "130.12.45.26" 
-PORT = 8765 
+HOST = '130.12.45.26'  # Был "130.12.45.26"
+PORT = 8765
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
 
 WEBSOCKET_URL = f"ws://{HOST}:{PORT}"
@@ -79,7 +78,7 @@ class ChatItem(MDBoxLayout, MDFlatButton):
         text_container.add_widget(self.label)
 
         self.on_release = lambda *args: self.on_open()
-        
+
         self.add_widget(image_container)
         self.add_widget(text_container)
 
@@ -102,7 +101,7 @@ class MessageItem(MDBoxLayout):
 
         self.root.size_hint_x = 0.975
         self.root.radius = 10
-        
+
         self.name_label = MDLabel(text=name, valign="middle", padding=(10, 0, 10, 0))
         self.name_label.font_size = 19
         self.name_label.bind(texture_size=self.name_label.setter("size"))
@@ -127,7 +126,7 @@ class MessageItem(MDBoxLayout):
 
     def adjust_size(self):
         self.height = self.name_label.texture_size[1] + self.text_label.texture_size[1] + 25
-        
+
 
 class AuthTab(MDBoxLayout, MDTabsBase):
     pass
@@ -135,7 +134,6 @@ class AuthTab(MDBoxLayout, MDTabsBase):
 
 class AuthScreen(MDScreen):
     current_tab = 'Авторизация'
-    app: ChatApp
 
     def on_pre_enter(self):
         self.clear_widgets()
@@ -233,7 +231,7 @@ class AuthScreen(MDScreen):
 
         # Нижняя часть (кнопки)
         button_box = MDBoxLayout(orientation="horizontal", size_hint_y=None, height="56dp", spacing=10)
-        self.reg_login_btn = MDRaisedButton(text="Войти", on_release=lambda *_: self.login_or_reg(), font_size = 20)
+        self.reg_login_btn = MDRaisedButton(text="Войти", on_release=lambda *_: self.login_or_reg(), font_size=20)
         button_box.add_widget(self.reg_login_btn)
         root.add_widget(button_box)
 
@@ -344,7 +342,8 @@ class CodeScreen(MDScreen):
 
         content_container = MDBoxLayout(orientation="vertical", padding=(20, 0), spacing=0)
 
-        hint_text = MDLabel(text='На указанную почту отправлен код подтверждения. \nЕсли код не приходит в течение 1 минуты, попробуйте нажать "назад"\nи зарегистрироваться заново.')
+        hint_text = MDLabel(
+            text='На указанную почту отправлен код подтверждения. \nЕсли код не приходит в течение 1 минуты, попробуйте нажать "назад"\nи зарегистрироваться заново.')
         hint_text.font_size = 22
         hint_text.adaptive_size = True
         content_container.add_widget(hint_text)
@@ -481,7 +480,7 @@ class ChatScreen(MDScreen):
         chat_content_scroll.add_widget(self.chat_content)
 
         message_text_box = MDBoxLayout(orientation="horizontal", spacing=20)
-        
+
         self.message_text = MDTextField(multiline=True, font_size=20)
         send_button = MDIconButton(icon='send')
         send_button.on_release = self.send_message
@@ -515,7 +514,7 @@ class ChatScreen(MDScreen):
         for i in data:
             self.chats_box.add_widget(ChatItem(i['name'], i['id'], '', self))
 
-    def open_chat(self, chat_id, download: bool=True):
+    def open_chat(self, chat_id, download: bool = True):
         try:
             self.current_chat_id = chat_id
 
@@ -561,15 +560,19 @@ class ChatScreen(MDScreen):
 
     def send_message(self):
         message = self.message_text.text
-        self.messages_query.append({self.current_chat_id: message})
 
-        data = {
-            "action": "get_members_keys",
-            'token': self.app.token,
-            "chat_id": self.current_chat_id
-        }
+        if self.current_chat_id is not None:
+            self.messages_query.append({self.current_chat_id: message})
 
-        self.app.send_to_websocket(data)
+            data = {
+                "action": "get_members_keys",
+                'token': self.app.token,
+                "chat_id": self.current_chat_id
+            }
+
+            print(self.messages_query)
+
+            self.app.send_to_websocket(data)
 
 
 class AddChatScreen(MDScreen):
@@ -690,7 +693,7 @@ class ChatApp(MDApp):
         self.ws_thread = threading.Thread(target=self.connect_websocket, daemon=True)
         self.ws_thread.start()
 
-        Clock.schedule_once(lambda dt: self.auto_login())
+        Clock.schedule_once(lambda dt: self.auto_login(), 2)
 
         return self.sm
 
@@ -712,7 +715,7 @@ class ChatApp(MDApp):
             elif action == 'get_name':
                 if data['status'] == 'OK':
                     self.nickname = data['name']
-                    
+
                     with open(NICKNAME_FILE, 'w') as file:
                         file.write(self.nickname)
 
@@ -747,7 +750,8 @@ class ChatApp(MDApp):
 
                     for i in data['data']:
                         message = base64.decodebytes(i['message'].encode('ascii'))
-                        fin_data.append({'from': i['from'], 'message': self.private_key.decrypt(message, padd).decode(), 'time': i['time']})
+                        fin_data.append({'from': i['from'], 'message': self.private_key.decrypt(message, padd).decode(),
+                                         'time': i['time']})
 
                     chat_file = os.path.join(CHATS_DIR, str(data['chat_id']))
 
@@ -761,15 +765,20 @@ class ChatApp(MDApp):
                         json.dump(fin_data, file)
 
                     if self.chat_screen.current_chat_id == data['chat_id']:
-                        Clock.schedule_once(lambda dt: self.chat_screen.open_chat(self.chat_screen.current_chat_id, False))
+                        Clock.schedule_once(
+                            lambda dt: self.chat_screen.open_chat(self.chat_screen.current_chat_id, False))
             elif action == 'get_members_keys':
                 if data['status'] == 'OK':
                     print(data)
                     chat_id = data['chat_id']
-                    messages = [list(i.values())[0] for i in list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query))]
+                    messages = [list(i.values())[0] for i in
+                                list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query))]
+
+                    print(messages)
 
                     for i in data['content']:
-                        public_key = serialization.load_pem_public_key(bytes(data[i], encoding='UTF-8'))
+                        print(list(i.keys())[0])
+                        public_key = serialization.load_pem_public_key(bytes(list(i.values())[0], encoding='UTF-8'))
 
                         for message in messages:
                             message = bytes(message, encoding='UTF-8')
@@ -787,12 +796,15 @@ class ChatApp(MDApp):
                             data = {
                                 "action": "send_message",
                                 'token': self.token,
-                                "to_username": i,
+                                "to_username": list(i.keys())[0],
                                 "message": message,
                                 "chat_id": chat_id
                             }
 
                             self.send_to_websocket(data)
+
+                    for i in list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query)):
+                        del self.chat_screen.messages_query[self.chat_screen.messages_query.index(i)]
 
         def on_error(ws, error):
             print("WebSocket ошибка:", error)
@@ -840,12 +852,12 @@ class ChatApp(MDApp):
                 print("Ошибка отправки в WebSocket:", e)
         else:
             print("Нет соединения с WebSocket")
-        
+
         return False
 
     def go_to_code(self):
         self.sm.current = 'code'
-    
+
     def open_chat(self):
         self.get_chats()
         self.sm.current = 'chat'
@@ -854,7 +866,7 @@ class ChatApp(MDApp):
         if os.path.exists(TOKEN_FILE):
             with open(TOKEN_FILE) as file:
                 self.token = file.read()
-            
+
             data = {
                 "action": "get_name",
                 "token": self.token
@@ -878,7 +890,7 @@ class ChatApp(MDApp):
     def load_private_key(self):
         with open(os.path.join(KEYS_DIR, self.token), 'rb') as file:
             data = file.read()
-        
+
         self.private_key = serialization.load_pem_private_key(data, None)
 
 
