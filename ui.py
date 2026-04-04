@@ -2,12 +2,14 @@ from kivymd.app import MDApp
 from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.anchorlayout import AnchorLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.button import MDIconButton, MDRaisedButton, MDFlatButton
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.tab import MDTabsBase
 from kivymd.uix.tab import MDTabs
+from kivy.uix.image import Image
 
 from kivy.utils import platform
 from kivy.clock import Clock
@@ -24,6 +26,7 @@ import hashlib
 import websocket
 import json
 import os
+import base64
 
 
 HOST = '127.0.0.1' # Был "130.12.45.26" 
@@ -40,10 +43,91 @@ ARLENE_DIR = os.path.join(SHARE_DIR, 'arlene_m')
 os.makedirs(ARLENE_DIR, exist_ok=True)
 KEYS_DIR = os.path.join(ARLENE_DIR, 'keys')
 os.makedirs(KEYS_DIR, exist_ok=True)
+CHATS_DIR = os.path.join(ARLENE_DIR, 'chats')
+os.makedirs(CHATS_DIR, exist_ok=True)
 
 TOKEN_FILE = os.path.join(ARLENE_DIR, 'token')
 NICKNAME_FILE = os.path.join(ARLENE_DIR, 'nickname.txt')
+CHATS_FILE = os.path.join(ARLENE_DIR, 'chats.json')
 
+
+class ChatItem(MDBoxLayout, MDFlatButton):
+    def __init__(self, name, chat_id, image, chat_screen, **kwargs):
+        super().__init__(orientation="horizontal", size_hint=(4, None), **kwargs)
+        self.chat_id = chat_id
+        self.chat_screen = chat_screen
+
+        self.halign = 'left'
+        self.height = 70
+
+        self.line_color = 'gray'
+        self.line_width = 2
+
+        image_container = MDBoxLayout()
+        image_container.padding = (-100, 0, 0, 5)
+
+        self.image = Image(source=image, size_hint=(None, None))
+        self.image.size = (50, 50)
+        self.image.allow_stretch = True
+        self.image.keep_ratio = False
+        self.image.center_x = -100
+        image_container.add_widget(self.image)
+
+        text_container = MDBoxLayout()
+        self.label = MDLabel(text=name, halign="left", valign="middle", size_hint=(1, None))
+        text_container.padding = (-110, 0, 0, -20)
+        text_container.add_widget(self.label)
+
+        self.on_release = lambda *args: self.on_open()
+        
+        self.add_widget(image_container)
+        self.add_widget(text_container)
+
+    def on_open(self):
+        self.chat_screen.open_chat(self.chat_id)
+
+
+class MessageItem(MDBoxLayout):
+    def __init__(self, name, text, own_message=True, content_type="text", **kwargs):
+        super().__init__(orientation="horizontal", spacing=10, padding=(10, 0, 10, 0), size_hint_y=None,
+                         **kwargs)
+
+        self.root = MDBoxLayout(orientation="vertical")
+        space_container = MDBoxLayout()
+
+        if own_message:
+            self.root.md_bg_color = '#751fff'
+        else:
+            self.root.md_bg_color = '#af0fff'
+
+        self.root.size_hint_x = 0.975
+        self.root.radius = 10
+        
+        self.name_label = MDLabel(text=name, valign="middle", padding=(10, 0, 10, 0))
+        self.name_label.font_size = 19
+        self.name_label.bind(texture_size=self.name_label.setter("size"))
+        self.root.add_widget(self.name_label)
+
+        self.text_label = MDLabel(text=text, valign="top", padding=(15, 0, 15, 0))
+        self.text_label.bind(texture_size=self.text_label.setter("size"))
+        self.root.add_widget(self.text_label)
+
+        if own_message:
+            self.name_label.halign = 'left'
+            self.text_label.halign = 'left'
+        else:
+            self.name_label.halign = 'right'
+            self.text_label.halign = 'right'
+
+        self.add_widget(self.root)
+
+        self.add_widget(space_container, not own_message)
+
+        Clock.schedule_once(lambda dt: self.adjust_size())
+
+    def adjust_size(self):
+        self.height = self.name_label.texture_size[1] + self.text_label.texture_size[1] + 25
+        
 
 class AuthTab(MDBoxLayout, MDTabsBase):
     pass
@@ -83,22 +167,23 @@ class AuthScreen(MDScreen):
             size_hint_y=None
         )
 
-        self.login_phone = MDTextField(hint_text="Номер телефона", input_filter="int")
+        self.login_email = MDTextField(hint_text="Электронная почта")
         self.login_password = MDTextField(hint_text="Пароль", password=True)
 
-        sms_login_box = MDBoxLayout(orientation="horizontal", spacing=10, size_hint_y=None, height="48dp")
-        self.login_sms = MDTextField(hint_text="Код из СМС", size_hint_x=0.7)
-        send_login_sms_btn = MDRaisedButton(
-            text="Отправить код",
-            size_hint_x=0.3,
-            on_release=lambda *_: self.send_sms_code(to="login")
+        error_box_login = MDBoxLayout(
+            orientation="vertical",
+            spacing=10,
+            padding=(0, 20),
+            adaptive_height=True,
+            size_hint_y=None
         )
-        sms_login_box.add_widget(self.login_sms)
-        sms_login_box.add_widget(send_login_sms_btn)
 
-        login_box.add_widget(self.login_phone)
+        self.login_error = MDLabel(text='')
+        error_box_login.add_widget(self.login_error)
+
+        login_box.add_widget(self.login_email)
         login_box.add_widget(self.login_password)
-        login_box.add_widget(sms_login_box)
+        login_box.add_widget(error_box_login)
 
         login_scroll.add_widget(login_box)
         login_tab.add_widget(login_scroll)
@@ -160,6 +245,11 @@ class AuthScreen(MDScreen):
                 self.reg_error.text = 'Ошибка: ' + message
             else:
                 self.reg_error.text = ''
+        else:
+            if message:
+                self.login_error.text = 'Ошибка: ' + message
+            else:
+                self.login_error.text = ''
 
     def tab_switched(self, *args):
         self.current_tab = args[2]
@@ -196,6 +286,27 @@ class AuthScreen(MDScreen):
                         else:
                             with open(NICKNAME_FILE, 'w') as file:
                                 file.write(nickname)
+        else:
+            email = self.login_email.text
+            password = self.login_password.text
+            self.show_error('', False)
+
+            if not email or not password:
+                self.show_error('Заполните все поля.', False)
+            else:
+                if not validators.email(email):
+                    self.show_error('Неправильный формат почты.', False)
+                else:
+                    if len(password) < 8:
+                        self.show_error('Пароль должен содержать от 8 символов.', False)
+                    else:
+                        data = {
+                            "action": "login",
+                            'email': email,
+                            "password": self.hash_password(password)
+                        }
+                        if not self.send_to_websocket(data):
+                            self.show_error('Нет соединения с WebSocket.', False)
 
     def hash_password(self, password: str) -> str:
         return hashlib.sha256(password.encode("utf-8")).hexdigest()
@@ -326,8 +437,223 @@ class CodeScreen(MDScreen):
 
 
 class ChatScreen(MDScreen):
+    current_chat_id = None
+    messages_query = []
+
+    def on_pre_enter(self):
+        self.clear_widgets()
+
+        root = MDBoxLayout(orientation="vertical", padding=20, spacing=10)
+
+        split_box = MDBoxLayout(orientation="horizontal")
+
+        chats_side = MDBoxLayout(orientation="vertical")
+        chats_side.size_hint_x = 0.52
+
+        chats_scroll = MDScrollView(do_scroll_x=False)
+        chats_scroll.always_overscroll = False
+        self.chats_box = MDBoxLayout(orientation="vertical", spacing=0, adaptive_size=True)
+
+        chats_scroll.add_widget(self.chats_box)
+
+        buttons_container = MDBoxLayout(orientation="horizontal")
+        buttons_container.size_hint_y = 0.15
+
+        button_space_container = MDBoxLayout()
+        add_chat_button = MDIconButton(icon='plus')
+        add_chat_button.md_bg_color = '#751fff'
+        add_chat_button.on_press = self.go_to_add_chat
+
+        buttons_container.add_widget(button_space_container)
+        buttons_container.add_widget(add_chat_button)
+
+        chats_side.add_widget(chats_scroll)
+        chats_side.add_widget(buttons_container)
+
+        chats_messages_box = MDBoxLayout(orientation="vertical", padding=20, spacing=30)
+
+        chat_content_scroll = MDScrollView(do_scroll_x=False)
+        self.chat_content = MDBoxLayout(orientation="vertical", spacing=30)
+        chat_content_scroll.size_hint_y = 5
+        self.chat_content.size_hint_y = None
+        self.chat_content.bind(minimum_height=self.chat_content.setter("height"))
+
+        chat_content_scroll.add_widget(self.chat_content)
+
+        message_text_box = MDBoxLayout(orientation="horizontal", spacing=20)
+        
+        self.message_text = MDTextField(multiline=True, font_size=20)
+        send_button = MDIconButton(icon='send')
+        send_button.on_release = self.send_message
+
+        message_text_box.add_widget(self.message_text)
+        message_text_box.add_widget(send_button)
+
+        chats_messages_box.add_widget(chat_content_scroll)
+        chats_messages_box.add_widget(message_text_box)
+
+        split_box.add_widget(chats_side)
+        split_box.add_widget(chats_messages_box)
+
+        root.add_widget(split_box)
+        self.add_widget(root)
+
+        self.update_chats()
+
     def set_app(self, app):
         self.app = app
+
+    def go_to_add_chat(self):
+        self.app.sm.current = 'add_chat'
+
+    def update_chats(self):
+        with open(CHATS_FILE) as file:
+            data = json.load(file)
+
+        self.chats_box.clear_widgets()
+
+        for i in data:
+            self.chats_box.add_widget(ChatItem(i['name'], i['id'], '', self))
+
+    def open_chat(self, chat_id, download: bool=True):
+        try:
+            self.current_chat_id = chat_id
+
+            if download:
+                self.download_chat(chat_id)
+
+            with open(os.path.join(CHATS_DIR, str(chat_id))) as file:
+                data = json.load(file)
+
+            self.show_messages(data)
+        except Exception:
+            self.show_messages([])
+
+    def show_messages(self, data):
+        self.chat_content.clear_widgets()
+
+        for i in data:
+            own_message = self.app.nickname == i['from']
+            self.chat_content.add_widget(MessageItem(i['from'], i['message'], own_message))
+
+    def download_chat(self, chat_id):
+        chat_file = os.path.join(CHATS_DIR, str(chat_id))
+
+        last_time = None
+
+        if os.path.exists(chat_file):
+            with open(chat_file) as file:
+                data = json.load(file)
+
+            if data:
+                last_time = data[-1]['time']
+
+        data = {
+            "action": "get_messages",
+            'token': self.app.token,
+            "chat_id": chat_id
+        }
+
+        if last_time is not None:
+            data['time'] = last_time
+
+        self.app.send_to_websocket(data)
+
+    def send_message(self):
+        message = self.message_text.text
+        self.messages_query.append({self.current_chat_id: message})
+
+        data = {
+            "action": "get_members_keys",
+            'token': self.app.token,
+            "chat_id": self.current_chat_id
+        }
+
+        self.app.send_to_websocket(data)
+
+
+class AddChatScreen(MDScreen):
+    def on_pre_enter(self):
+        self.clear_widgets()
+
+        if self.app.private_key is None:
+            self.app.load_private_key()
+
+        root = MDBoxLayout(orientation='vertical', padding=10, spacing=20)
+
+        header_box = MDBoxLayout(orientation='horizontal')
+
+        back_button = MDIconButton(icon='arrow-left', md_bg_color='#751fff')
+        back_button.on_release = self.back
+        header_space_container = MDBoxLayout()
+        header_space_container.size_hint_x = 0.5
+        header_label = MDLabel(text='Добавить чат')
+        header_label.font_size = 30
+
+        header_box.add_widget(back_button)
+        header_box.add_widget(header_space_container)
+        header_box.add_widget(header_label)
+
+        content_box = MDBoxLayout()
+        content_box.size_hint_y = 10
+
+        tabs = MDTabs()
+
+        personal_tab = AuthTab(title='Личный чат')
+
+        personal_layout = MDBoxLayout(orientation='vertical', padding=10, spacing=20)
+
+        self.person_text_personal = MDTextField(hint_text='Имя пользователя')
+        self.error_text_personal = MDLabel(text='')
+        add_button_personal = MDIconButton(icon='plus', md_bg_color='#751fff')
+        add_button_personal.on_release = self.add_chat_personal
+        space_personal = MDBoxLayout(size_hint_y=10)
+
+        personal_layout.add_widget(self.person_text_personal)
+        personal_layout.add_widget(self.error_text_personal)
+        personal_layout.add_widget(add_button_personal)
+        personal_layout.add_widget(space_personal)
+
+        personal_tab.add_widget(personal_layout)
+
+        group_tab = AuthTab(title='Группа')
+
+        tabs.add_widget(personal_tab)
+        tabs.add_widget(group_tab)
+
+        content_box.add_widget(tabs)
+
+        root.add_widget(header_box)
+        root.add_widget(content_box)
+
+        self.add_widget(root)
+
+    def set_app(self, app):
+        self.app = app
+
+    def back(self):
+        self.app.sm.current = 'chat'
+
+    def show_error(self, message, personal: bool):
+        if personal:
+            if message:
+                self.error_text_personal.text = 'Ошибка: ' + message
+            else:
+                self.error_text_personal.text = ''
+
+    def add_chat_personal(self):
+        name = self.person_text_personal.text
+        self.show_error('', True)
+
+        if not name:
+            self.show_error('Неверное имя пользователя.', True)
+
+        data = {
+            "action": "create_chat_with_user",
+            'token': self.app.token,
+            "username": name
+        }
+        self.app.send_to_websocket(data)
 
 
 class ScreenManager(MDScreenManager):
@@ -342,6 +668,7 @@ class ChatApp(MDApp):
 
         self.nickname = None
         self.token = None
+        self.private_key = None
 
         self.sm = ScreenManager()
         self.auth_screen = AuthScreen(name="auth")
@@ -351,16 +678,19 @@ class ChatApp(MDApp):
 
         self.chat_screen = ChatScreen(name="chat")
         self.chat_screen.set_app(self)
+        self.add_chat_screen = AddChatScreen(name='add_chat')
+        self.add_chat_screen.set_app(self)
 
         self.sm.add_widget(self.auth_screen)
         self.sm.add_widget(self.code_screen)
         self.sm.add_widget(self.chat_screen)
+        self.sm.add_widget(self.add_chat_screen)
 
         self.ws = None
         self.ws_thread = threading.Thread(target=self.connect_websocket, daemon=True)
         self.ws_thread.start()
 
-        # Clock.schedule_once(lambda dt: self.auto_login())
+        Clock.schedule_once(lambda dt: self.auto_login())
 
         return self.sm
 
@@ -387,6 +717,82 @@ class ChatApp(MDApp):
                         file.write(self.nickname)
 
                     Clock.schedule_once(lambda dt: self.open_chat())
+            elif action == 'login':
+                if data['status'] == 'OK' and self.token is None:
+                    self.token = data['token']
+
+                    if os.path.exists(os.path.join(KEYS_DIR, self.token)):
+                        with open(TOKEN_FILE, 'w') as file:
+                            file.write(self.token)
+
+                        self.auto_login()
+                else:
+                    self.auth_screen.show_error(data['message'], False)
+            elif action == 'get_chats' and data['status'] == 'OK':
+                with open(CHATS_FILE, 'w') as file:
+                    json.dump(data['chats'], file)
+            elif action == 'create_chat_with_user':
+                if data['status'] == 'OK':
+                    Clock.schedule_once(lambda dt: self.open_chat())
+                else:
+                    self.add_chat_screen.show_error(data['message'], True)
+            elif action == 'get_messages':
+                if data['status'] == 'OK':
+                    fin_data = []
+                    padd = padding.OAEP(
+                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                        algorithm=hashes.SHA256(),
+                        label=None
+                    )
+
+                    for i in data['data']:
+                        message = base64.decodebytes(i['message'].encode('ascii'))
+                        fin_data.append({'from': i['from'], 'message': self.private_key.decrypt(message, padd).decode(), 'time': i['time']})
+
+                    chat_file = os.path.join(CHATS_DIR, str(data['chat_id']))
+
+                    if os.path.exists(chat_file):
+                        with open(chat_file) as file:
+                            f_data = json.load(file)
+
+                        fin_data = f_data + fin_data
+
+                    with open(chat_file, 'w') as file:
+                        json.dump(fin_data, file)
+
+                    if self.chat_screen.current_chat_id == data['chat_id']:
+                        Clock.schedule_once(lambda dt: self.chat_screen.open_chat(self.chat_screen.current_chat_id, False))
+            elif action == 'get_members_keys':
+                if data['status'] == 'OK':
+                    print(data)
+                    chat_id = data['chat_id']
+                    messages = [list(i.values())[0] for i in list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query))]
+
+                    for i in data['content']:
+                        public_key = serialization.load_pem_public_key(bytes(data[i], encoding='UTF-8'))
+
+                        for message in messages:
+                            message = bytes(message, encoding='UTF-8')
+                            message = public_key.encrypt(
+                                message,
+                                padding.OAEP(
+                                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                                    algorithm=hashes.SHA256(),
+                                    label=None
+                                )
+                            )
+
+                            message = base64.encodebytes(message).decode('ascii')
+
+                            data = {
+                                "action": "send_message",
+                                'token': self.token,
+                                "to_username": i,
+                                "message": message,
+                                "chat_id": chat_id
+                            }
+
+                            self.send_to_websocket(data)
 
         def on_error(ws, error):
             print("WebSocket ошибка:", error)
@@ -441,6 +847,7 @@ class ChatApp(MDApp):
         self.sm.current = 'code'
     
     def open_chat(self):
+        self.get_chats()
         self.sm.current = 'chat'
 
     def auto_login(self):
@@ -453,7 +860,26 @@ class ChatApp(MDApp):
                 "token": self.token
             }
 
+            self.load_private_key()
+
             self.send_to_websocket(data)
+
+    def get_chats(self):
+        data = {
+            "action": "get_chats",
+            'token': self.token
+        }
+
+        self.send_to_websocket(data)
+
+    def update_chats(self):
+        self.chat_screen.update_chats()
+
+    def load_private_key(self):
+        with open(os.path.join(KEYS_DIR, self.token), 'rb') as file:
+            data = file.read()
+        
+        self.private_key = serialization.load_pem_private_key(data, None)
 
 
 if __name__ == '__main__':

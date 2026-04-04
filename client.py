@@ -28,8 +28,18 @@ class Test:
         # self.get_public_key()
         # print(self.make_public_key())
         # self.get_public_key()
-        #self.send_message('-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzFku8ieHEvYLIh3tWH0b\neCxHoCguGmgHzlAWUH680qAwqS3N5KQYm/PbjSPr4Q6mDkcLbA6I70wizpIFIMv4\nMfHjkZHkHi43VzpIR4dpkuzvmAp79r0SCVCJwhzCaXLd0JxOVRNmTSZ6c4T2LmjM\nUJhygq/zhTqCb1dUoxMkSvtPOGz2PQ+K5Q67ha8u4UBCLbpfJWmc47xyd5WTWnda\n9NR9GcebE8NaalV/x1YZT/ttBLstZvIjoNEPYqQ/aT7qRC0bSf387RZ2juelQ2/c\nC7XrlvIWmPBwimhBMiyAtT5gy2OgcaHaGiumehvT0oRlzEnHjT42HDDMPwR8eUmL\ncQIDAQAB\n-----END PUBLIC KEY-----\n')
-        self.get_messages()
+        self.send_message('''-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAj2AAefgLoEuJwcX8ZvMH
+f2I5cvZU8HLZzsK4ghAgIdaGqY+mk8FVq7y4FMPI4G2gyMcnUqRhazv2VJ4KiuZu
+/pRClP0HJIOTH60u+M90jIyq56QaJVjds+ON5OtQxZam+1vGgILD35CAi0XjGU+M
+7bJ7OPjjBFOtsb0eQisabOHmf/dJWBd5wHjw+20jB9jAb1kXueYZaZSAKTdxQhcA
+AlyjlMT2Pj6JtFaPMI8TF7K2SfZLQodBUQ6AP2zRmWnB4dxgo6jK1VWgkAE0GfdX
+W24eUYw9p36zEToB4O5/gitQXKXq3UIlwdUM3Qaau2KH8pQVcWIvAMUxMY1m9lxQ
+/QIDAQAB
+-----END PUBLIC KEY-----
+''')
+        # self.get_messages()
+        # self.get_chats()
         ws_thread.join()
 
     def on_ws_message(self, ws, message):
@@ -196,6 +206,14 @@ class Test:
             "action": "get_messages",
             'token': '16abb270ddfa4e19b97c465c3d761c4d',
             "chat_id": 1
+        }
+
+        self.send_to_websocket(data)
+
+    def get_chats(self):
+        data = {
+            "action": "get_chats",
+            'token': '82c40eb1b194459ba99b5feeb13140ef'
         }
 
         self.send_to_websocket(data)

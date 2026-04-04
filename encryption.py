@@ -62,16 +62,43 @@ class User:
 # print(message)
 
 
-private_key = rsa.generate_private_key(
-    public_exponent=65537,
-    key_size=2048,
-)
+# with open('/home/maksmesh/.local/share/arlene_m/keys/82c40eb1b194459ba99b5feeb13140ef', 'rb') as file:
+#     data = file.read()
 
-public_key = private_key.public_key()
+# private_key = serialization.load_pem_private_key(data, None)
 
-pem_public_key = public_key.public_bytes(
-    encoding=serialization.Encoding.PEM,
-    format=serialization.PublicFormat.SubjectPublicKeyInfo
-)
+# public_key = '''-----BEGIN PUBLIC KEY-----
+# MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAj2AAefgLoEuJwcX8ZvMH
+# f2I5cvZU8HLZzsK4ghAgIdaGqY+mk8FVq7y4FMPI4G2gyMcnUqRhazv2VJ4KiuZu
+# /pRClP0HJIOTH60u+M90jIyq56QaJVjds+ON5OtQxZam+1vGgILD35CAi0XjGU+M
+# 7bJ7OPjjBFOtsb0eQisabOHmf/dJWBd5wHjw+20jB9jAb1kXueYZaZSAKTdxQhcA
+# AlyjlMT2Pj6JtFaPMI8TF7K2SfZLQodBUQ6AP2zRmWnB4dxgo6jK1VWgkAE0GfdX
+# W24eUYw9p36zEToB4O5/gitQXKXq3UIlwdUM3Qaau2KH8pQVcWIvAMUxMY1m9lxQ
+# /QIDAQAB
+# -----END PUBLIC KEY-----
+# '''
 
-self.public_key = serialization.load_pem_public_key(pem_public_key)
+# message = bytes('АААА!', encoding='UTF-8')
+# public_key = serialization.load_pem_public_key(bytes(public_key, 'UTF-8'))
+
+# message = public_key.encrypt(
+#     message,
+#     padding.OAEP(
+#         mgf=padding.MGF1(algorithm=hashes.SHA256()),
+#         algorithm=hashes.SHA256(),
+#         label=None
+#     )
+# )
+
+# message = private_key.decrypt(
+#     message,
+#     padding.OAEP(
+#         mgf=padding.MGF1(algorithm=hashes.SHA256()),
+#         algorithm=hashes.SHA256(),
+#         label=None
+#     )
+# )
+
+# print(message.decode())
+
+print(list({'a': 1}.keys()))

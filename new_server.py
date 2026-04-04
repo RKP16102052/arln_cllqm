@@ -149,7 +149,7 @@ def login(data: dict):
 
     if user is None:
         session.close()
-        return {"action": "login", "status": "error", "message": "Такой пользователь не зарегестрирован"}
+        return {"action": "login", "status": "error", "message": "Такой пользователь не зарегистрирован"}
 
     if not user.hashed_password == password:
         session.close()
@@ -290,16 +290,11 @@ def send_message(data: dict):
         chat_data = json.load(file)
 
     with open(CHATS_LOCATION + '/' + str(chat_id) + '.json', 'w', encoding='UTF-8') as file:
-        datet = datetime.datetime.now()
-
-        time_now = str(datet.hour) + ':' + str(datet.minute)
-        date_now = str(datet.day) + '.' + str(datet.month) + '.' + str(datet.year)
-
         chat_message = {'from': user1.name,
                         'to': user2.token,
+                        'type': 'text',
                         'message': message,
-                        'time': time_now,
-                        'date': date_now}
+                        'time': time.time()}
 
         chat_data['data'].append(chat_message)
 
@@ -311,6 +306,7 @@ def send_message(data: dict):
 def get_messages(data: dict):
     token = data.get('token', None)
     chat_id = data.get('chat_id', None)
+    last_time = data.get('time', None)
 
     if token is None or chat_id is None:
         return {"action": "get_messages", "status": "error", "message": "Неверный формат"}
@@ -332,9 +328,15 @@ def get_messages(data: dict):
 
     fin = []
 
-    for i in chat_data['data']:
-        if i['to'] == token:
-            fin.append({"from": i["from"], "message": i["message"], "time": i["time"], "date": i["date"]})
+    # TODO
+    if last_time is None:
+        for i in chat_data['data']:
+            if i['to'] == token:
+                fin.append({"from": i["from"], "message": i["message"], "time": i["time"]})
+    else:
+        for i in chat_data['data']:
+            if i['to'] == token and i['time'] > last_time:
+                fin.append({"from": i["from"], "message": i["message"], "time": i["time"]})
 
     session.close()
 
@@ -362,6 +364,77 @@ def get_name(data: dict):
     return {"action": "get_name", "status": "OK", "message": "Успех", "name": name}
 
 
+def get_chats(data: dict):
+    token = data.get('token', None)
+
+    if token is None:
+        return {"action": "get_chats", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+
+    user = session.query(User).filter(User.token == token).first()
+
+    if user is None:
+        session.close()
+        return {"action": "get_chats", "status": "error", "message": "Неверный токен"}
+
+    chats = user.chats
+
+    if chats is None:
+        chats = []
+    else:
+        chats = list(map(int, chats.split(';')))
+    fin = []
+
+    for i in chats:
+        chat = session.query(Chat).filter(Chat.id == i).first()
+
+        if chat.is_private:
+            second_user_id = int(list(filter(lambda x: str(user.id) != x, chat.members.split(';')))[0])
+            name = session.query(User).filter(User.id == second_user_id).first().name
+        else:
+            name = chat.name
+
+        fin.append({'id': chat.id, 'name': name})
+
+    session.close()
+
+    return {"action": "get_chats", "status": "OK", "message": "Успех", "chats": fin}
+
+
+def get_members_keys(data: dict):
+    token = data.get('token', None)
+    chat_id = data.get('chat_id', None)
+
+    if token is None or chat_id is None:
+        return {"action": "get_members_keys", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+
+    chat = session.query(Chat).filter(Chat.id == chat_id).first()
+
+    if chat is None:
+        session.close()
+        return {"action": "get_members_keys", "status": "error", "message": "Неверный id чата"}
+
+    members = list(map(int, chat.members.split(';')))
+
+    tokens = []
+    fin = []
+
+    for i in members:
+        user = session.query(User).filter(User.id == i).first()
+        tokens.append(user.token)
+        fin.append({user.name: user.public_key})
+
+    session.close()
+
+    if token not in tokens:
+        return {"action": "get_members_keys", "status": "error", "message": "Недостаточно прав"}
+
+    return {"action": "get_members_keys", "status": "OK", "message": "Успех", "content": fin, "chat_id": chat_id}
+
+
 async def handler(websocket):
     connected_clients.add(websocket)
     try:
@@ -386,6 +459,10 @@ async def handler(websocket):
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(get_messages(data), ensure_ascii=False).encode()))
             elif action == 'get_name':
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(get_name(data), ensure_ascii=False).encode()))
+            elif action == 'get_chats':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_chats(data), ensure_ascii=False).encode()))
+            elif action == 'get_members_keys':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_members_keys(data), ensure_ascii=False).encode()))
             else:
                 await websocket.send(json.dumps({"status": "error", "message": "Неизвестное действие"}, ensure_ascii=False))
     except websockets.exceptions.ConnectionClosed:
