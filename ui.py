@@ -28,7 +28,7 @@ import json
 import os
 import base64
 
-HOST = '130.12.45.26'  # Был "130.12.45.26"
+HOST = '127.0.0.1'  # Был "130.12.45.26"
 PORT = 8765
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
 
@@ -570,9 +570,12 @@ class ChatScreen(MDScreen):
                 "chat_id": self.current_chat_id
             }
 
-            print(self.messages_query)
-
             self.app.send_to_websocket(data)
+            self.message_text.text = ''
+
+    def get_current_chat_messages(self):
+        if self.current_chat_id is not None:
+            self.download_chat(self.current_chat_id)
 
 
 class AddChatScreen(MDScreen):
@@ -672,6 +675,8 @@ class ChatApp(MDApp):
         self.nickname = None
         self.token = None
         self.private_key = None
+        self.get_chats_event = None
+        self.get_current_messages_event = None
 
         self.sm = ScreenManager()
         self.auth_screen = AuthScreen(name="auth")
@@ -734,6 +739,8 @@ class ChatApp(MDApp):
             elif action == 'get_chats' and data['status'] == 'OK':
                 with open(CHATS_FILE, 'w') as file:
                     json.dump(data['chats'], file)
+
+                Clock.schedule_once(lambda dt: self.update_chats())
             elif action == 'create_chat_with_user':
                 if data['status'] == 'OK':
                     Clock.schedule_once(lambda dt: self.open_chat())
@@ -769,15 +776,11 @@ class ChatApp(MDApp):
                             lambda dt: self.chat_screen.open_chat(self.chat_screen.current_chat_id, False))
             elif action == 'get_members_keys':
                 if data['status'] == 'OK':
-                    print(data)
                     chat_id = data['chat_id']
                     messages = [list(i.values())[0] for i in
                                 list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query))]
 
-                    print(messages)
-
                     for i in data['content']:
-                        print(list(i.keys())[0])
                         public_key = serialization.load_pem_public_key(bytes(list(i.values())[0], encoding='UTF-8'))
 
                         for message in messages:
@@ -860,6 +863,13 @@ class ChatApp(MDApp):
 
     def open_chat(self):
         self.get_chats()
+
+        if self.get_chats_event is None:
+            self.get_chats_event = Clock.schedule_interval(lambda dt: self.get_chats(), 5)
+
+        if self.get_current_messages_event is None:
+            self.get_chats_event = Clock.schedule_interval(lambda dt: self.chat_screen.get_current_chat_messages(), 5)
+
         self.sm.current = 'chat'
 
     def auto_login(self):

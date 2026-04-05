@@ -8,7 +8,6 @@ from email.mime.multipart import MIMEMultipart
 import random
 import uuid
 import time
-import datetime
 import os
 
 from data.__all_models import User, TempUser, Chat
@@ -22,7 +21,11 @@ PORT = 8765
 EMAIL = 'arlenemessengerg@gmail.com'
 EMAIL_PASS = 'pzzo urrd hjej arpw'
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
-CHATS_LOCATION = 'chats/data'
+
+CHATS_LOCATION = 'chats'
+os.makedirs(CHATS_LOCATION, exist_ok=True)
+CHATS_DATA_LOCATION = os.path.join(CHATS_LOCATION, 'data')
+os.makedirs(CHATS_DATA_LOCATION, exist_ok=True)
 
 connected_clients = set()
 email_server = None
@@ -217,7 +220,7 @@ def create_chat_with_user(data: dict):
     session.commit()
     session.close()
 
-    with open(CHATS_LOCATION + '/' + str(chat_id) + '.json', 'w', encoding='UTF-8') as file:
+    with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'w', encoding='UTF-8') as file:
         json.dump({'data': []}, file)
 
     return {"action": "create_chat_with_user", "status": "OK", "message": "Успех", "id": chat_id}
@@ -286,10 +289,10 @@ def send_message(data: dict):
         session.close()
         return {"action": "send_message", "status": "error", "message": "Недостаточно прав"}
 
-    with open(CHATS_LOCATION + '/' + str(chat_id) + '.json', 'r', encoding='UTF-8') as file:
+    with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'r', encoding='UTF-8') as file:
         chat_data = json.load(file)
 
-    with open(CHATS_LOCATION + '/' + str(chat_id) + '.json', 'w', encoding='UTF-8') as file:
+    with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'w', encoding='UTF-8') as file:
         chat_message = {'from': user1.name,
                         'to': user2.token,
                         'type': 'text',
@@ -323,7 +326,7 @@ def get_messages(data: dict):
         session.close()
         return {"action": "get_messages", "status": "error", "message": "Недостаточно прав"}
 
-    with open(CHATS_LOCATION + '/' + str(chat_id) + '.json', 'r', encoding='UTF-8') as file:
+    with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'r', encoding='UTF-8') as file:
         chat_data = json.load(file)
 
     fin = []
@@ -480,7 +483,19 @@ def start_email_server():
 
 
 def send_email(message: MIMEMultipart):
-    email_server.sendmail(message["From"], message["To"], message.as_string())
+    try:
+        email_server.sendmail(message["From"], message["To"], message.as_string())
+    except Exception as e:
+        print('Ошибка почтового сервера:', e)
+        print('Попытка перезапуска...')
+
+        start_email_server()
+
+        try:
+            email_server.sendmail(message["From"], message["To"], message.as_string())
+            print('Успех!')
+        except Exception:
+            print('Неудача.')
 
 
 async def main():
