@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Arlene Colloquium – безопасный мессенджер будущего</title>
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ range(1, 1000) | random }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+	<link rel="icon" href="static/favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <div class="hero">
+        <div class="container">
+            <h1>Arlene Colloquium</h1>
+            <p class="tagline">Конфиденциальность, шифрование и свобода общения</p>
+            <a href="/download" class="btn btn-primary">Скачать мессенджер</a>
+            <div class="version-badge">Версия 1.0 | 05.04.2026</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>Сквозное шифрование</h3>
+                <p>RSA-2048 + Fernet симметричное шифрование. Только вы и ваш собеседник можете читать сообщения.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>WebSocket реального времени</h3>
+                <p>Мгновенная доставка сообщений без задержек. Поддержка офлайн-очереди на сервере.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">👥</div>
+                <h3>Личные чаты и группы</h3>
+                <p>Общайтесь один на один или создавайте групповые беседы. Полный контроль над участниками.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📱</div>
+                <h3>Кроссплатформенность</h3>
+                <p>Работает на Android, Windows, Linux и macOS благодаря KivyMD.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <h3>Локальное хранение ключей</h3>
+                <p>Ваши приватные ключи никогда не покидают устройство. Регистрация по email с подтверждением.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📁</div>
+                <h3>История сообщений</h3>
+                <p>Все чаты сохраняются локально в зашифрованном виде. Поддержка поиска (в планах).</p>
+            </div>
+        </div>
+
+        <div class="screenshot-placeholder">
+            <h2>Интерфейс Arlene Colloquium</h2>
+            <div class="screenshot-grid">
+                <div class="screenshot-card">
+                    <div class="mock-screen">
+                        <div class="mock-header">Arlene Colloquium</div>
+                        <div class="mock-chat">
+                            <div class="mock-message own">Привет! Как дела?</div>
+                            <div class="mock-message other">Отлично! А у тебя?</div>
+                        </div>
+                        <div class="mock-input">Введите сообщение...</div>
+                    </div>
+                    <p>Чат с шифрованием</p>
+                </div>
+                <div class="screenshot-card">
+                    <div class="mock-screen">
+                        <div class="mock-header">Список чатов</div>
+                        <div class="mock-chat-list">
+                            <div class="mock-chat-item">👤 Алексей</div>
+                            <div class="mock-chat-item">👥 Работа</div>
+                            <div class="mock-chat-item">👤 Мария</div>
+                        </div>
+                    </div>
+                    <p>Удобный список диалогов</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="install-steps">
+            <h2>Как установить</h2>
+            <div class="steps">
+                <div class="step">1. Скачайте установочный файл по кнопке выше</div>
+                <div class="step">2. Запустите установку (на Android – разрешите установку из неизвестных источников)</div>
+                <div class="step">3. Зарегистрируйтесь по email, подтвердите код</div>
+                <div class="step">4. Начните защищённое общение с друзьями!</div>
+            </div>
+        </div>
+
+        <footer>
+            <p>© 2026 Arlene Technologies. Мессенджер с открытым исходным кодом.</p>
+        </footer>
+    </div>
+</body>
+</html>
