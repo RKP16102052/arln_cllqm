@@ -438,6 +438,82 @@ def get_members_keys(data: dict):
     return {"action": "get_members_keys", "status": "OK", "message": "Успех", "content": fin, "chat_id": chat_id}
 
 
+def create_group(data: dict):
+    token = data.get('token', None)
+    usernames = data.get('usernames', None)
+    name = data.get('name', None)
+
+    if token is None or usernames is None or name is None:
+        return {"action": "create_group", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+
+    main_user = session.query(User).filter(User.token == token).first()
+
+    if main_user is None:
+        session.close()
+        return {"action": "create_group", "status": "error", "message": "Неверный токен"}
+
+    ids = []
+
+    try:
+        for i in usernames:
+            user = session.query(User).filter(User.name == i).first()
+
+            if user is not None:
+                if user.id == main_user.id:
+                    continue
+
+                ids.append(user.id)
+    except Exception:
+        session.close()
+        return {"action": "create_group", "status": "error", "message": "Неверный формат"}
+
+    if not ids:
+        session.close()
+        return {"action": "create_group", "status": "error", "message": "Все участники не найдены"}
+
+    members = ';'.join(list(map(str, ids)) + [str(main_user.id)])
+    created_by = main_user.id
+    is_private = False
+
+    chat = Chat()
+
+    chat.members = members
+    chat.created_by = created_by
+    chat.is_private = is_private
+    chat.name = name
+
+    session.add(chat)
+    session.commit()
+
+    if main_user.chats is None:
+        main_user.chats = str(chat.id)
+    else:
+        main_user.chats = ';'.join(main_user.chats.split(';') + [str(chat.id)])
+
+    for i in ids:
+        if i == main_user.id:
+            continue
+
+        user = session.query(User).filter(User.id == i).first()
+
+        if user.chats is None:
+            user.chats = str(chat.id)
+        else:
+            user.chats = ';'.join(user.chats.split(';') + [str(chat.id)])
+
+    chat_id = chat.id
+
+    session.commit()
+    session.close()
+
+    with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'w', encoding='UTF-8') as file:
+        json.dump({'data': []}, file)
+
+    return {"action": "create_group", "status": "OK", "message": "Успех", "id": chat_id}
+
+
 async def handler(websocket):
     connected_clients.add(websocket)
     try:
@@ -466,6 +542,8 @@ async def handler(websocket):
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(get_chats(data), ensure_ascii=False).encode()))
             elif action == 'get_members_keys':
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(get_members_keys(data), ensure_ascii=False).encode()))
+            elif action == 'create_group':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(create_group(data), ensure_ascii=False).encode()))
             else:
                 await websocket.send(json.dumps({"status": "error", "message": "Неизвестное действие"}, ensure_ascii=False))
     except websockets.exceptions.ConnectionClosed:

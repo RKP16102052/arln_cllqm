@@ -2,7 +2,6 @@ from kivymd.app import MDApp
 from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.anchorlayout import AnchorLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.button import MDIconButton, MDRaisedButton, MDFlatButton
 from kivymd.uix.textfield import MDTextField
@@ -10,10 +9,12 @@ from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.tab import MDTabsBase
 from kivymd.uix.tab import MDTabs
 from kivy.uix.image import Image
+from kivymd.uix.dialog import MDDialog
 
 from kivy.utils import platform
 from kivy.clock import Clock
 from kivy.properties import StringProperty
+from plyer import filechooser
 import validators
 
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
@@ -455,15 +456,21 @@ class ChatScreen(MDScreen):
 
         chats_scroll.add_widget(self.chats_box)
 
-        buttons_container = MDBoxLayout(orientation="horizontal")
+        buttons_container = MDBoxLayout(orientation="horizontal", spacing=10)
         buttons_container.size_hint_y = 0.15
 
         button_space_container = MDBoxLayout()
+
+        settings_chat_button = MDIconButton(icon='account-settings')
+        settings_chat_button.md_bg_color = '#751fff'
+        settings_chat_button.on_press = self.go_to_settings
+
         add_chat_button = MDIconButton(icon='plus')
         add_chat_button.md_bg_color = '#751fff'
         add_chat_button.on_press = self.go_to_add_chat
 
         buttons_container.add_widget(button_space_container)
+        buttons_container.add_widget(settings_chat_button)
         buttons_container.add_widget(add_chat_button)
 
         chats_side.add_widget(chats_scroll)
@@ -524,7 +531,7 @@ class ChatScreen(MDScreen):
             with open(os.path.join(CHATS_DIR, str(chat_id))) as file:
                 data = json.load(file)
 
-            self.show_messages(data)
+            Clock.schedule_once(lambda dt: self.show_messages(data))
         except Exception:
             self.show_messages([])
 
@@ -577,6 +584,10 @@ class ChatScreen(MDScreen):
         if self.current_chat_id is not None:
             self.download_chat(self.current_chat_id)
 
+    def go_to_settings(self):
+        # filechooser.open_file()
+        self.app.open_settings()
+
 
 class AddChatScreen(MDScreen):
     def on_pre_enter(self):
@@ -624,6 +635,25 @@ class AddChatScreen(MDScreen):
 
         group_tab = AuthTab(title='Группа')
 
+        group_layout = MDBoxLayout(orientation='vertical', padding=10, spacing=20)
+
+        self.group_name = MDTextField(hint_text='Название группы')
+
+        self.members_text = MDTextField(hint_text='Участники группы через ", ", например: "1, 2, 3"')
+
+        self.error_text_group = MDLabel(text='')
+        add_button_group = MDIconButton(icon='plus', md_bg_color='#751fff')
+        add_button_group.on_release = self.add_group
+        space_group = MDBoxLayout(size_hint_y=10)
+
+        group_layout.add_widget(self.group_name)
+        group_layout.add_widget(self.members_text)
+        group_layout.add_widget(self.error_text_group)
+        group_layout.add_widget(add_button_group)
+        group_layout.add_widget(space_group)
+
+        group_tab.add_widget(group_layout)
+
         tabs.add_widget(personal_tab)
         tabs.add_widget(group_tab)
 
@@ -638,7 +668,7 @@ class AddChatScreen(MDScreen):
         self.app = app
 
     def back(self):
-        self.app.sm.current = 'chat'
+        self.app.open_chat()
 
     def show_error(self, message, personal: bool):
         if personal:
@@ -646,6 +676,11 @@ class AddChatScreen(MDScreen):
                 self.error_text_personal.text = 'Ошибка: ' + message
             else:
                 self.error_text_personal.text = ''
+        else:
+            if message:
+                self.error_text_group.text = 'Ошибка: ' + message
+            else:
+                self.error_text_group.text = ''
 
     def add_chat_personal(self):
         name = self.person_text_personal.text
@@ -660,6 +695,301 @@ class AddChatScreen(MDScreen):
             "username": name
         }
         self.app.send_to_websocket(data)
+
+    def add_group(self):
+        name = self.group_name.text
+        self.show_error('', False)
+
+        if not name:
+            self.show_error('Неверное название группы.', False)
+
+        usernames = self.members_text.text.split(', ')
+
+        if not usernames:
+            self.show_error('Неверный формат участников.', False)
+
+        data = {
+            "action": "create_group",
+            'token': self.app.token,
+            "name": name,
+            "usernames": usernames
+        }
+        self.app.send_to_websocket(data)
+
+
+class SettingsScreen(MDScreen):
+    def on_pre_enter(self):
+        self.clear_widgets()
+
+        root = MDBoxLayout(orientation='vertical', padding=10, spacing=20)
+
+        header_box = MDBoxLayout(orientation='horizontal')
+
+        back_button = MDIconButton(icon='arrow-left', md_bg_color='#751fff')
+        back_button.on_release = self.back
+        header_space_container = MDBoxLayout()
+        header_space_container.size_hint_x = 0.6
+        header_label = MDLabel(text='Настройки')
+        header_label.font_size = 30
+
+        header_box.add_widget(back_button)
+        header_box.add_widget(header_space_container)
+        header_box.add_widget(header_label)
+
+        content_box = MDBoxLayout(orientation='vertical', size_hint_y=8)
+
+        image_container = MDBoxLayout(size_hint=(1, 7))
+
+        h_image_container = MDBoxLayout(orientation='horizontal')
+
+        self.image = Image(source='image', size_hint=(1, 1))
+        self.image.allow_stretch = True
+        self.image.keep_ratio = False
+
+        h_image_container.add_widget(MDBoxLayout(size_hint_x=1))
+        h_image_container.add_widget(self.image)
+        h_image_container.add_widget(MDBoxLayout(size_hint_x=1))
+
+        image_container.add_widget(h_image_container)
+
+        h_upload_box = MDBoxLayout(orientation='horizontal')
+
+        upload_image_button = MDIconButton(icon='upload', md_bg_color='#751fff')
+
+        h_upload_box.add_widget(MDBoxLayout(size_hint_x=1))
+        h_upload_box.add_widget(upload_image_button)
+        h_upload_box.add_widget(MDBoxLayout(size_hint_x=1))
+
+        content_box.add_widget(h_upload_box)
+
+        h_token_box = MDBoxLayout(orientation='horizontal')
+
+        export_token_text = MDLabel(text='Экспортировать ключ')
+        export_token_button = MDIconButton(icon='file-export', md_bg_color='#751fff')
+        export_token_button.on_press = self.export_key_warn
+
+        h_token_box.add_widget(MDBoxLayout(size_hint_x=1))
+        h_token_box.add_widget(export_token_text)
+        h_token_box.add_widget(export_token_button)
+        h_token_box.add_widget(MDBoxLayout(size_hint_x=1))
+
+        content_box.add_widget(h_token_box)
+        content_box.add_widget(MDBoxLayout(size_hint_y=1))
+
+        h_exit_box = MDBoxLayout(orientation='horizontal')
+
+        exit_button = MDFlatButton(text='Выйти из аккаунта', text_color='#ff7a7a')
+        exit_button.font_size = 18
+        exit_button.theme_text_color = 'Custom'
+        exit_button.on_press = self.logout_dial
+
+        h_exit_box.add_widget(MDBoxLayout(size_hint_x=1))
+        h_exit_box.add_widget(exit_button)
+        h_exit_box.add_widget(MDBoxLayout(size_hint_x=1))
+
+        content_box.add_widget(h_exit_box)
+        
+        h_permanent_exit_box = MDBoxLayout(orientation='horizontal')
+
+        permanent_exit_button = MDFlatButton(text='Выйти из аккаунта с устройства', text_color='red')
+        permanent_exit_button.font_size = 18
+        permanent_exit_button.theme_text_color = 'Custom'
+        permanent_exit_button.on_press = self.permanent_logout_dial
+
+        h_permanent_exit_box.add_widget(MDBoxLayout(size_hint_x=1))
+        h_permanent_exit_box.add_widget(permanent_exit_button)
+        h_permanent_exit_box.add_widget(MDBoxLayout(size_hint_x=1))
+
+        content_box.add_widget(h_permanent_exit_box)
+
+        content_box.add_widget(MDBoxLayout(size_hint_y=1))
+
+        root.add_widget(header_box)
+        root.add_widget(image_container)
+        root.add_widget(content_box)
+
+        self.add_widget(root)
+
+    def set_app(self, app):
+        self.app = app
+
+    def back(self):
+        self.app.open_chat()
+
+    def export_key_warn(self):
+        self.dialog = MDDialog(
+            title="Экспорт ключа",
+            text="Экспорт этого файла позволит вам войти на другом устройстве. Не передавайте этот файл другим и не отправляйте его по интернету.",
+            buttons=[
+                MDFlatButton(text="Экспорт", on_release=lambda x: self.export_key_dial(True)),
+                MDFlatButton(text="Отмена", on_release=lambda x: self.export_key_dial(False)),
+            ],
+        )
+
+        self.dialog.open()
+
+    def export_key_dial(self, export: bool):
+        self.dialog.dismiss()
+
+        if export:
+            self.export_key()
+
+    def export_key(self):
+        save_file = filechooser.save_file()
+
+        if save_file is not None:
+            key_file = os.path.join(KEYS_DIR, self.app.token)
+            if os.path.exists(key_file):
+                with open(key_file, 'rb') as file:
+                    key = file.read().decode()
+
+                with open(save_file[0], 'w') as file:
+                    file.writelines([self.app.token + '\n', key])
+
+    def logout_dial(self):
+        self.dialog = MDDialog(
+            title="Выход из аккаунта",
+            text="Вы уверены?",
+            buttons=[
+                MDFlatButton(text="Да", on_release=lambda x: self.logout()),
+                MDFlatButton(text="Отмена", on_release=lambda x: self.dialog.dismiss()),
+            ],
+        )
+
+        self.dialog.open()
+
+    def permanent_logout_dial(self):
+        self.per_logout_button = MDFlatButton(text="", on_release=lambda x: self.permanent_logout())
+        self.per_logout_button.disabled = True
+
+        self.dialog = MDDialog(
+            title="Выход из аккаунта",
+            text="ВНИМАНИЕ!!! Если вы выйдите из аккаунта таким способом, то вам придётся заново импортировать ключ. Если у вас не осталось авторизованных аккаунтов и файла ключа, то вы потеряете доступ к своему аккаунту!!!",
+            buttons=[
+                self.per_logout_button,
+                MDFlatButton(text="Отмена", on_release=lambda x: self.dialog.dismiss()),
+            ],
+        )
+
+        self.dialog.open()
+
+        Clock.schedule_once(lambda dt: self.activate_dial_button(), 5)
+
+    def logout(self):
+        self.dialog.dismiss()
+        self.app.logout()
+
+    def permanent_logout(self):
+        self.dialog.dismiss()
+
+        try:
+            os.remove(os.path.join(KEYS_DIR, self.app.token))
+        except Exception:
+            pass
+
+        self.app.logout()
+
+    def activate_dial_button(self):
+        self.per_logout_button.text = 'Выйти'
+        self.per_logout_button.disabled = False
+
+
+class ImportKeyScreen(MDScreen):
+    def on_pre_enter(self):
+        self.clear_widgets()
+
+        root = MDBoxLayout(orientation='vertical', padding=10, spacing=20)
+
+        header_box = MDBoxLayout(orientation='horizontal')
+
+        back_button = MDIconButton(icon='arrow-left', md_bg_color='#751fff')
+        back_button.on_release = self.back
+        header_space_container = MDBoxLayout()
+        header_space_container.size_hint_x = 0.5
+        header_label = MDLabel(text='Импорт ключа')
+        header_label.font_size = 30
+
+        header_box.add_widget(back_button)
+        header_box.add_widget(header_space_container)
+        header_box.add_widget(header_label)
+
+        content_box = MDBoxLayout(size_hint_y=10, orientation='vertical')
+
+        hint_label_box = MDBoxLayout(orientation='horizontal')
+
+        hint_label = MDLabel(text='Для правильный работы приложения требуется импортировать файл ключа. Чтобы получить его, перейдите в приложение на авторизованном в этот аккаунт устройстве, зайдите в настройки и нажмите "Экспорт ключа".')
+        hint_label.font_size = 20
+
+        hint_label_box.add_widget(MDBoxLayout(size_hint_x=0.2))
+        hint_label_box.add_widget(hint_label)
+        hint_label_box.add_widget(MDBoxLayout(size_hint_x=0.2))
+
+        content_box.add_widget(hint_label_box)
+
+        import_box = MDBoxLayout(orientation='horizontal', size_hint_y=0.2)
+
+        import_label = MDLabel(text='Импортировать ключ')
+        import_label.font_size = 20
+
+        import_button = MDIconButton(icon='import', md_bg_color='#751fff')
+        import_button.on_press = self.import_key
+
+        import_box.add_widget(MDBoxLayout(size_hint_x=0.5))
+        import_box.add_widget(import_label)
+        import_box.add_widget(import_button)
+        import_box.add_widget(MDBoxLayout(size_hint_x=1.8))
+
+        content_box.add_widget(import_box)
+
+        error_box = MDBoxLayout(orientation='horizontal')
+
+        self.error_label = MDLabel()
+        self.error_label.font_size = 20
+
+        error_box.add_widget(MDBoxLayout(size_hint_x=0.2))
+        error_box.add_widget(self.error_label)
+        error_box.add_widget(MDBoxLayout(size_hint_x=0.2))
+
+        content_box.add_widget(error_box)
+        content_box.add_widget(MDBoxLayout(size_hint_y=1))
+
+        root.add_widget(header_box)
+        root.add_widget(content_box)
+
+        self.add_widget(root)
+
+    def set_app(self, app):
+        self.app = app
+
+    def back(self):
+        self.app.logout()
+
+    def import_key(self):
+        key_file = filechooser.open_file()
+        self.show_error('')
+
+        try:
+            if key_file is not None:
+                with open(key_file[0]) as file:
+                    data = file.readlines()
+
+                token, key = data[0].rstrip('\n'), ''.join(data[1:])
+
+                if token != self.app.token:
+                    self.show_error('Неверный файл.')
+                else:
+                    with open(os.path.join(KEYS_DIR, token), 'wb') as file:
+                        file.write(bytes(key, encoding='UTF-8'))
+
+                    self.app.auto_login()
+        except Exception:
+            self.show_error('Не удалось прочитать файл.')
+
+    def show_error(self, text):
+        if text:
+            self.error_label.text = 'Ошибка: ' + text
+        else:
+            self.error_label.text = ''
 
 
 class ScreenManager(MDScreenManager):
@@ -683,16 +1013,22 @@ class ChatApp(MDApp):
         self.auth_screen.set_app(self)
         self.code_screen = CodeScreen(name="code")
         self.code_screen.set_app(self)
+        self.import_key_screen = ImportKeyScreen(name="import_key")
+        self.import_key_screen.set_app(self)
 
         self.chat_screen = ChatScreen(name="chat")
         self.chat_screen.set_app(self)
         self.add_chat_screen = AddChatScreen(name='add_chat')
         self.add_chat_screen.set_app(self)
+        self.settings_screen = SettingsScreen(name='settings')
+        self.settings_screen.set_app(self)
 
         self.sm.add_widget(self.auth_screen)
         self.sm.add_widget(self.code_screen)
         self.sm.add_widget(self.chat_screen)
         self.sm.add_widget(self.add_chat_screen)
+        self.sm.add_widget(self.settings_screen)
+        self.sm.add_widget(self.import_key_screen)
 
         self.ws = None
         self.ws_thread = threading.Thread(target=self.connect_websocket, daemon=True)
@@ -729,11 +1065,13 @@ class ChatApp(MDApp):
                 if data['status'] == 'OK' and self.token is None:
                     self.token = data['token']
 
-                    if os.path.exists(os.path.join(KEYS_DIR, self.token)):
-                        with open(TOKEN_FILE, 'w') as file:
-                            file.write(self.token)
+                    with open(TOKEN_FILE, 'w') as file:
+                        file.write(self.token)
 
+                    if os.path.exists(os.path.join(KEYS_DIR, self.token)):
                         self.auto_login()
+                    else:
+                        Clock.schedule_once(lambda dt: self.go_to_import_key_screen())
                 else:
                     self.auth_screen.show_error(data['message'], False)
             elif action == 'get_chats' and data['status'] == 'OK':
@@ -808,31 +1146,17 @@ class ChatApp(MDApp):
 
                     for i in list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query)):
                         del self.chat_screen.messages_query[self.chat_screen.messages_query.index(i)]
+            elif action == 'create_group':
+                if data['status'] == 'OK':
+                    Clock.schedule_once(lambda dt: self.open_chat())
+                else:
+                    self.add_chat_screen.show_error(data['message'], False)
 
         def on_error(ws, error):
             print("WebSocket ошибка:", error)
 
         def on_close(ws, *args):
             print("WebSocket закрыт", *args)
-
-        def on_open(ws):
-            # print("WebSocket соединение открыто")
-            # # авто-аутентификация по токену, если сохранён
-            # token = None
-            # try:
-            #     if os.path.exists(TOKEN_FILE):
-            #         with open(TOKEN_FILE, "r", encoding="utf-8") as f:
-            #             token = f.read().strip()
-            # except Exception:
-            #     pass
-            # if token:
-            #     self.token = token
-            #     self.ws.send(json.dumps({"action": "token_auth", "token": token}, ensure_ascii=False))
-            #     # Ответ обработается в on_message -> handle_auth_response
-            # else:
-            #     # показать экран логина
-            #     Clock.schedule_once(lambda dt: self.open_auth())
-            pass
 
         try:
             self.ws = websocket.WebSocketApp(
@@ -841,7 +1165,7 @@ class ChatApp(MDApp):
                 on_error=on_error,
                 on_close=on_close,
             )
-            self.ws.on_open = on_open
+
             self.ws.run_forever()
         except Exception as e:
             print("Ошибка подключения WebSocket:", e)
@@ -877,14 +1201,17 @@ class ChatApp(MDApp):
             with open(TOKEN_FILE) as file:
                 self.token = file.read()
 
-            data = {
-                "action": "get_name",
-                "token": self.token
-            }
+            if not os.path.exists(os.path.join(KEYS_DIR, self.token)):
+                self.go_to_import_key_screen()
+            else:
+                data = {
+                    "action": "get_name",
+                    "token": self.token
+                }
 
-            self.load_private_key()
+                self.load_private_key()
 
-            self.send_to_websocket(data)
+                self.send_to_websocket(data)
 
     def get_chats(self):
         data = {
@@ -902,6 +1229,42 @@ class ChatApp(MDApp):
             data = file.read()
 
         self.private_key = serialization.load_pem_private_key(data, None)
+
+    def open_settings(self):
+        self.sm.current = 'settings'
+
+    def go_to_import_key_screen(self):
+        self.sm.current = 'import_key'
+
+    def logout(self):
+        self.nickname = None
+        self.token = None
+        self.private_key = None
+
+        if self.get_chats_event is not None:
+            self.get_chats_event.cancel()
+            self.get_chats_event = None
+
+        if self.get_current_messages_event is not None:
+            self.get_current_messages_event.cancel()
+            self.get_current_messages_event = None
+
+        try:
+            os.remove(TOKEN_FILE)
+        except FileNotFoundError:
+            pass
+
+        try:
+            os.remove(NICKNAME_FILE)
+        except FileNotFoundError:
+            pass
+        
+        try:
+            os.remove(CHATS_FILE)
+        except FileNotFoundError:
+            pass
+
+        self.sm.current = 'auth'
 
 
 if __name__ == '__main__':
