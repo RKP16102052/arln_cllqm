@@ -9,6 +9,7 @@ import random
 import uuid
 import time
 import os
+import base64
 
 from data.__all_models import User, TempUser, Chat
 from data import db_session
@@ -26,6 +27,8 @@ CHATS_LOCATION = 'chats'
 os.makedirs(CHATS_LOCATION, exist_ok=True)
 CHATS_DATA_LOCATION = os.path.join(CHATS_LOCATION, 'data')
 os.makedirs(CHATS_DATA_LOCATION, exist_ok=True)
+AVATARS_LOCATION = os.path.join(CHATS_LOCATION, 'avatars')
+os.makedirs(AVATARS_LOCATION, exist_ok=True)
 
 connected_clients = set()
 email_server = None
@@ -514,6 +517,28 @@ def create_group(data: dict):
     return {"action": "create_group", "status": "OK", "message": "Успех", "id": chat_id}
 
 
+def upload_avatar(data: dict):
+    token = data.get('token', None)
+    image = data.get('image', None)
+
+    if token is None or image is None:
+        return {"action": "upload_avatar", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+    user = session.query(User).filter(User.token == token).first()
+    session.close()
+
+    if user is None:
+        return {"action": "upload_avatar", "status": "error", "message": "Неверный токен"}
+
+    image = base64.decodebytes(bytes(image, encoding='ascii'))
+
+    with open(os.path.join(AVATARS_LOCATION, token + '.png'), 'wb') as file:
+        file.write(image)
+
+    return {"action": "upload_avatar", "status": "OK", "message": "Успех"}
+
+
 async def handler(websocket):
     connected_clients.add(websocket)
     try:
@@ -544,6 +569,8 @@ async def handler(websocket):
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(get_members_keys(data), ensure_ascii=False).encode()))
             elif action == 'create_group':
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(create_group(data), ensure_ascii=False).encode()))
+            elif action == 'upload_avatar':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_avatar(data), ensure_ascii=False).encode()))
             else:
                 await websocket.send(json.dumps({"status": "error", "message": "Неизвестное действие"}, ensure_ascii=False))
     except websockets.exceptions.ConnectionClosed:

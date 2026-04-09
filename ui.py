@@ -13,7 +13,6 @@ from kivymd.uix.dialog import MDDialog
 
 from kivy.utils import platform
 from kivy.clock import Clock
-from kivy.properties import StringProperty
 from plyer import filechooser
 import validators
 
@@ -21,13 +20,14 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.fernet import Fernet
 
-import time
+from PIL import Image as PILImage
 import threading
 import hashlib
 import websocket
 import json
 import os
 import base64
+import io
 
 HOST = '127.0.0.1'  # Был "130.12.45.26"
 PORT = 8765
@@ -86,6 +86,9 @@ class ChatItem(MDBoxLayout, MDFlatButton):
     def on_open(self):
         self.chat_screen.open_chat(self.chat_id)
 
+    def reload(self):
+        self.image.reload()
+
 
 class MessageItem(MDBoxLayout):
     def __init__(self, name, text, own_message=True, content_type="text", **kwargs):
@@ -103,7 +106,7 @@ class MessageItem(MDBoxLayout):
         self.root.size_hint_x = 0.975
         self.root.radius = 10
 
-        self.name_label = MDLabel(text=name, valign="middle", padding=(10, 0, 10, 0))
+        self.name_label = MDLabel(text=name, valign="middle", padding=(10, 20, 10, 0))
         self.name_label.font_size = 19
         self.name_label.bind(texture_size=self.name_label.setter("size"))
         self.root.add_widget(self.name_label)
@@ -127,6 +130,7 @@ class MessageItem(MDBoxLayout):
 
     def adjust_size(self):
         self.height = self.name_label.texture_size[1] + self.text_label.texture_size[1] + 25
+        self.name_label.size_hint_y = self.name_label.texture_size[1] / self.height
 
 
 class AuthTab(MDBoxLayout, MDTabsBase):
@@ -478,13 +482,13 @@ class ChatScreen(MDScreen):
 
         chats_messages_box = MDBoxLayout(orientation="vertical", padding=20, spacing=30)
 
-        chat_content_scroll = MDScrollView(do_scroll_x=False)
+        self.chat_content_scroll = MDScrollView(do_scroll_x=False)
         self.chat_content = MDBoxLayout(orientation="vertical", spacing=30)
-        chat_content_scroll.size_hint_y = 5
+        self.chat_content_scroll.size_hint_y = 5
         self.chat_content.size_hint_y = None
         self.chat_content.bind(minimum_height=self.chat_content.setter("height"))
 
-        chat_content_scroll.add_widget(self.chat_content)
+        self.chat_content_scroll.add_widget(self.chat_content)
 
         message_text_box = MDBoxLayout(orientation="horizontal", spacing=20)
 
@@ -495,7 +499,7 @@ class ChatScreen(MDScreen):
         message_text_box.add_widget(self.message_text)
         message_text_box.add_widget(send_button)
 
-        chats_messages_box.add_widget(chat_content_scroll)
+        chats_messages_box.add_widget(self.chat_content_scroll)
         chats_messages_box.add_widget(message_text_box)
 
         split_box.add_widget(chats_side)
@@ -526,6 +530,7 @@ class ChatScreen(MDScreen):
             self.current_chat_id = chat_id
 
             if download:
+                self.chat_content_scroll.scroll_y = 0
                 self.download_chat(chat_id)
 
             with open(os.path.join(CHATS_DIR, str(chat_id))) as file:
@@ -755,6 +760,7 @@ class SettingsScreen(MDScreen):
         h_upload_box = MDBoxLayout(orientation='horizontal')
 
         upload_image_button = MDIconButton(icon='upload', md_bg_color='#751fff')
+        upload_image_button.on_press = self.upload_avatar
 
         h_upload_box.add_widget(MDBoxLayout(size_hint_x=1))
         h_upload_box.add_widget(upload_image_button)
@@ -893,6 +899,29 @@ class SettingsScreen(MDScreen):
         self.per_logout_button.text = 'Выйти'
         self.per_logout_button.disabled = False
 
+    def upload_avatar(self):
+        image = filechooser.open_file()
+
+        try:
+            if image is not None:
+                image = PILImage.open(image[0]).resize((256, 256))
+
+            byte_buff = io.BytesIO()
+
+            image.save(byte_buff, format='PNG')
+
+            image = base64.encodebytes(byte_buff.getvalue()).decode('ascii')
+
+            data = {
+                "action": "upload_avatar",
+                'token': self.app.token,
+                "image": image
+            }
+
+            self.app.send_to_websocket(data)
+        except Exception:
+            pass
+
 
 class ImportKeyScreen(MDScreen):
     def on_pre_enter(self):
@@ -1030,9 +1059,7 @@ class ChatApp(MDApp):
         self.sm.add_widget(self.settings_screen)
         self.sm.add_widget(self.import_key_screen)
 
-        self.ws = None
-        self.ws_thread = threading.Thread(target=self.connect_websocket, daemon=True)
-        self.ws_thread.start()
+        self.start_websocket()
 
         Clock.schedule_once(lambda dt: self.auto_login(), 2)
 
@@ -1072,6 +1099,9 @@ class ChatApp(MDApp):
                         self.auto_login()
                     else:
                         Clock.schedule_once(lambda dt: self.go_to_import_key_screen())
+                elif data['status'] == 'OK':
+                    if os.path.exists(os.path.join(KEYS_DIR, self.token)):
+                        self.auto_login()
                 else:
                     self.auth_screen.show_error(data['message'], False)
             elif action == 'get_chats' and data['status'] == 'OK':
@@ -1172,6 +1202,7 @@ class ChatApp(MDApp):
 
         def on_close(ws, *args):
             print("WebSocket закрыт", *args)
+            Clock.schedule_once(lambda dt: self.start_websocket(), 3)
 
         try:
             self.ws = websocket.WebSocketApp(
@@ -1280,6 +1311,11 @@ class ChatApp(MDApp):
             pass
 
         self.sm.current = 'auth'
+
+    def start_websocket(self):
+        self.ws = None
+        self.ws_thread = threading.Thread(target=self.connect_websocket, daemon=True)
+        self.ws_thread.start()
 
 
 if __name__ == '__main__':
