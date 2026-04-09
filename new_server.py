@@ -281,12 +281,12 @@ def send_message(data: dict):
 
     user2 = session.query(User).filter(User.name == to_username).first()
 
+    session.close()
+
     if user2 is None:
-        session.close()
         return {"action": "send_message", "status": "error", "message": "Неверный токен"}
 
     if str(user1.id) not in members or str(user2.id) not in members:
-        session.close()
         return {"action": "send_message", "status": "error", "message": "Недостаточно прав"}
 
     with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'r', encoding='UTF-8') as file:

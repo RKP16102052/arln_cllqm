@@ -1095,7 +1095,15 @@ class ChatApp(MDApp):
 
                     for i in data['data']:
                         message = base64.decodebytes(i['message'].encode('ascii'))
-                        fin_data.append({'from': i['from'], 'message': self.private_key.decrypt(message, padd).decode(),
+                        fin = bytes()
+
+                        for j in range(0, len(message), 256):
+                            print(self.private_key.decrypt(message[j:j + 256], padd), j)
+                            fin += self.private_key.decrypt(message[j:j + 256], padd)
+
+                        fin = fin.decode()
+
+                        fin_data.append({'from': i['from'], 'message': fin,
                                          'time': i['time']})
 
                     chat_file = os.path.join(CHATS_DIR, str(data['chat_id']))
@@ -1121,28 +1129,35 @@ class ChatApp(MDApp):
                     for i in data['content']:
                         public_key = serialization.load_pem_public_key(bytes(list(i.values())[0], encoding='UTF-8'))
 
-                        for message in messages:
-                            message = bytes(message, encoding='UTF-8')
-                            message = public_key.encrypt(
-                                message,
-                                padding.OAEP(
-                                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                                    algorithm=hashes.SHA256(),
-                                    label=None
-                                )
-                            )
+                        for or_message in messages:
+                            or_message = bytes(or_message, encoding='UTF-8')
+                            
+                            fin = bytes()
 
-                            message = base64.encodebytes(message).decode('ascii')
+                            for j in range(0, len(or_message), 180):
+                                message = public_key.encrypt(
+                                    or_message[j:j + 180],
+                                    padding.OAEP(
+                                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                                        algorithm=hashes.SHA256(),
+                                        label=None
+                                    )
+                                )
+
+                                fin += message
+
+                            fin = base64.encodebytes(fin).decode('ascii')
 
                             data = {
                                 "action": "send_message",
                                 'token': self.token,
                                 "to_username": list(i.keys())[0],
-                                "message": message,
+                                "message": fin,
                                 "chat_id": chat_id
                             }
 
                             self.send_to_websocket(data)
+
 
                     for i in list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query)):
                         del self.chat_screen.messages_query[self.chat_screen.messages_query.index(i)]

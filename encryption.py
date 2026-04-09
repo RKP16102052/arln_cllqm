@@ -1,5 +1,6 @@
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
+import sys
 
 
 class User:
@@ -23,6 +24,7 @@ class User:
 
     def enctypt_message(self, message, public_key):
         message = bytes(message, encoding='UTF-8')
+        print(len(message))
         message = public_key.encrypt(
             message,
             padding.OAEP(
@@ -52,8 +54,8 @@ class User:
 # user1 = User()
 # user2 = User()
 
-# # Первый пользователь отправляет второму.
-# message = 'Привет!!'
+# message = '字' * 9
+# print(sys.getsizeof(message))
 
 # message = user1.enctypt_message(message, user2.get_public_key())
 
@@ -61,44 +63,11 @@ class User:
 
 # print(message)
 
+a = bytes('字' * 91, encoding='UTF-8')
 
-# with open('/home/maksmesh/.local/share/arlene_m/keys/82c40eb1b194459ba99b5feeb13140ef', 'rb') as file:
-#     data = file.read()
+print(len(a))
+print(list(a))
 
-# private_key = serialization.load_pem_private_key(data, None)
 
-# public_key = '''-----BEGIN PUBLIC KEY-----
-# MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAj2AAefgLoEuJwcX8ZvMH
-# f2I5cvZU8HLZzsK4ghAgIdaGqY+mk8FVq7y4FMPI4G2gyMcnUqRhazv2VJ4KiuZu
-# /pRClP0HJIOTH60u+M90jIyq56QaJVjds+ON5OtQxZam+1vGgILD35CAi0XjGU+M
-# 7bJ7OPjjBFOtsb0eQisabOHmf/dJWBd5wHjw+20jB9jAb1kXueYZaZSAKTdxQhcA
-# AlyjlMT2Pj6JtFaPMI8TF7K2SfZLQodBUQ6AP2zRmWnB4dxgo6jK1VWgkAE0GfdX
-# W24eUYw9p36zEToB4O5/gitQXKXq3UIlwdUM3Qaau2KH8pQVcWIvAMUxMY1m9lxQ
-# /QIDAQAB
-# -----END PUBLIC KEY-----
-# '''
-
-# message = bytes('АААА!', encoding='UTF-8')
-# public_key = serialization.load_pem_public_key(bytes(public_key, 'UTF-8'))
-
-# message = public_key.encrypt(
-#     message,
-#     padding.OAEP(
-#         mgf=padding.MGF1(algorithm=hashes.SHA256()),
-#         algorithm=hashes.SHA256(),
-#         label=None
-#     )
-# )
-
-# message = private_key.decrypt(
-#     message,
-#     padding.OAEP(
-#         mgf=padding.MGF1(algorithm=hashes.SHA256()),
-#         algorithm=hashes.SHA256(),
-#         label=None
-#     )
-# )
-
-# print(message.decode())
-
-print(list({'a': 1}.keys()))
+for i in range(0, len(a), 180):
+    print(len(a[i:i + 180]))
