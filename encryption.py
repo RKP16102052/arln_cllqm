@@ -1,5 +1,6 @@
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
+import hashlib
 import sys
 
 
@@ -71,3 +72,5 @@ print(list(a))
 
 for i in range(0, len(a), 180):
     print(len(a[i:i + 180]))
+
+print(hashlib.sha256('12345678'.encode("utf-8")).hexdigest())

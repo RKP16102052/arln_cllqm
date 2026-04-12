@@ -45,10 +45,15 @@ KEYS_DIR = os.path.join(ARLENE_DIR, 'keys')
 os.makedirs(KEYS_DIR, exist_ok=True)
 CHATS_DIR = os.path.join(ARLENE_DIR, 'chats')
 os.makedirs(CHATS_DIR, exist_ok=True)
+CHATS_IMAGES_DIR = os.path.join(ARLENE_DIR, 'chats_images')
+os.makedirs(CHATS_IMAGES_DIR, exist_ok=True)
 
 TOKEN_FILE = os.path.join(ARLENE_DIR, 'token')
 NICKNAME_FILE = os.path.join(ARLENE_DIR, 'nickname.txt')
 CHATS_FILE = os.path.join(ARLENE_DIR, 'chats.json')
+AVATAR_LOCATION = os.path.join(ARLENE_DIR, 'avatar.png')
+AVATAR_TIME_LOCATION = os.path.join(ARLENE_DIR, 'avatar_time')
+IMAGES_TIME_FILE = os.path.join(ARLENE_DIR, 'images_time.json')
 
 
 class ChatItem(MDBoxLayout, MDFlatButton):
@@ -71,6 +76,12 @@ class ChatItem(MDBoxLayout, MDFlatButton):
         self.image.allow_stretch = True
         self.image.keep_ratio = False
         self.image.center_x = -100
+
+        if os.path.exists(os.path.join(CHATS_IMAGES_DIR, str(self.chat_id))):
+            self.image.source = os.path.join(CHATS_IMAGES_DIR, str(self.chat_id))
+        else:
+            self.image.source = 'default.png'
+
         image_container.add_widget(self.image)
 
         text_container = MDBoxLayout()
@@ -590,7 +601,6 @@ class ChatScreen(MDScreen):
             self.download_chat(self.current_chat_id)
 
     def go_to_settings(self):
-        # filechooser.open_file()
         self.app.open_settings()
 
 
@@ -747,7 +757,12 @@ class SettingsScreen(MDScreen):
 
         h_image_container = MDBoxLayout(orientation='horizontal')
 
-        self.image = Image(source='image', size_hint=(1, 1))
+        if os.path.exists(AVATAR_LOCATION):
+            path = AVATAR_LOCATION
+        else:
+            path = 'default.png'
+
+        self.image = Image(source=path, size_hint=(1, 1))
         self.image.allow_stretch = True
         self.image.keep_ratio = False
 
@@ -815,6 +830,8 @@ class SettingsScreen(MDScreen):
         root.add_widget(content_box)
 
         self.add_widget(root)
+
+        self.update_avatar()
 
     def set_app(self, app):
         self.app = app
@@ -921,6 +938,18 @@ class SettingsScreen(MDScreen):
             self.app.send_to_websocket(data)
         except Exception:
             pass
+
+    def update_avatar(self):
+        data = {"action": "download_avatar", "username": self.app.nickname}
+
+        try:
+            with open(AVATAR_TIME_LOCATION) as file:
+                timee = float(file.read())
+                data['time'] = timee
+        except Exception:
+            pass
+
+        self.app.send_to_websocket(data)
 
 
 class ImportKeyScreen(MDScreen):
@@ -1036,6 +1065,7 @@ class ChatApp(MDApp):
         self.private_key = None
         self.get_chats_event = None
         self.get_current_messages_event = None
+        self.update_chats_images_event = None
 
         self.sm = ScreenManager()
         self.auth_screen = AuthScreen(name="auth")
@@ -1079,6 +1109,9 @@ class ChatApp(MDApp):
                     self.auth_screen.show_error(error, True)
             elif action == 'register_verification':
                 if data['status'] == 'OK':
+                    with open(NICKNAME_FILE) as file:
+                        self.nickname = file.read()
+
                     Clock.schedule_once(lambda dt: self.open_chat())
             elif action == 'get_name':
                 if data['status'] == 'OK':
@@ -1128,7 +1161,6 @@ class ChatApp(MDApp):
                         fin = bytes()
 
                         for j in range(0, len(message), 256):
-                            print(self.private_key.decrypt(message[j:j + 256], padd), j)
                             fin += self.private_key.decrypt(message[j:j + 256], padd)
 
                         fin = fin.decode()
@@ -1196,6 +1228,49 @@ class ChatApp(MDApp):
                     Clock.schedule_once(lambda dt: self.open_chat())
                 else:
                     self.add_chat_screen.show_error(data['message'], False)
+            elif action == 'upload_avatar':
+                if data['status'] == 'OK':
+                    self.settings_screen.update_avatar()
+            elif action == 'download_avatar':
+                if data['status'] == 'OK':
+                    if 'image' in data:
+                        if self.nickname == data['username']:
+                            image = base64.decodebytes(bytes(data['image'], encoding='ascii'))
+
+                            with open(AVATAR_LOCATION, 'wb') as file:
+                                file.write(image)
+
+                            if 'time' in data:
+                                with open(AVATAR_TIME_LOCATION, 'w') as file:
+                                    file.write(str(data['time']))
+
+                            self.settings_screen.image.source = AVATAR_LOCATION
+                            Clock.schedule_once(lambda dt: self.settings_screen.image.reload())
+            elif action == 'download_chat_image':
+                if data['status'] == 'OK':
+                    if 'image' in data:
+                        image = base64.decodebytes(bytes(data['image'], encoding='ascii'))
+
+                        with open(os.path.join(CHATS_IMAGES_DIR, str(data['chat_id'])), 'wb') as file:
+                            file.write(image)
+
+                        if 'time' in data:
+                            try:
+                                with open(IMAGES_TIME_FILE, 'r') as file:
+                                    f_data = json.load(file)
+                            except Exception:
+                                f_data = {}
+
+                            f_data[str(data['chat_id'])] = data['time']
+
+                            with open(IMAGES_TIME_FILE, 'w') as file:
+                                json.dump(f_data, file)
+
+                        for i in self.chat_screen.chats_box.children:
+                            if i.chat_id == data['chat_id']:
+                                i.image.source = os.path.join(CHATS_IMAGES_DIR, str(data['chat_id']))
+                                Clock.schedule_once(lambda dt: i.image.reload())
+                                break
 
         def on_error(ws, error):
             print("WebSocket ошибка:", error)
@@ -1239,6 +1314,10 @@ class ChatApp(MDApp):
 
         if self.get_current_messages_event is None:
             self.get_chats_event = Clock.schedule_interval(lambda dt: self.chat_screen.get_current_chat_messages(), 5)
+
+        if self.update_chats_images_event is None:
+            self.update_chats_images_event = Clock.schedule_interval(lambda dt: self.get_chats_images(), 20)
+            self.get_chats_images()
 
         self.sm.current = 'chat'
 
@@ -1295,6 +1374,10 @@ class ChatApp(MDApp):
             self.get_current_messages_event.cancel()
             self.get_current_messages_event = None
 
+        if self.update_chats_images_event is not None:
+            self.update_chats_images_event.cancel()
+            self.update_chats_images_event = None
+
         try:
             os.remove(TOKEN_FILE)
         except FileNotFoundError:
@@ -1316,6 +1399,34 @@ class ChatApp(MDApp):
         self.ws = None
         self.ws_thread = threading.Thread(target=self.connect_websocket, daemon=True)
         self.ws_thread.start()
+
+    def get_chats_images(self):
+        try:
+            with open(CHATS_FILE) as file:
+                data = json.load(file)
+
+            try:
+                with open(IMAGES_TIME_FILE) as file:
+                    times = json.load(file)
+            except Exception:
+                times = None
+
+            for i in data:
+                w_data = {
+                    "action": "download_chat_image",
+                    "token": self.token,
+                    "chat_id": i['id']
+                }
+
+                if times is not None:
+                    cur_time = times.get(str(i['id']), None)
+
+                    if cur_time is not None:
+                        w_data['time'] = cur_time
+
+                self.send_to_websocket(w_data)
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

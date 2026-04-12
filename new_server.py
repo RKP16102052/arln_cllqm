@@ -10,6 +10,8 @@ import uuid
 import time
 import os
 import base64
+from PIL import Image
+import io
 
 from data.__all_models import User, TempUser, Chat
 from data import db_session
@@ -29,6 +31,8 @@ CHATS_DATA_LOCATION = os.path.join(CHATS_LOCATION, 'data')
 os.makedirs(CHATS_DATA_LOCATION, exist_ok=True)
 AVATARS_LOCATION = os.path.join(CHATS_LOCATION, 'avatars')
 os.makedirs(AVATARS_LOCATION, exist_ok=True)
+GROUP_IMAGES_LOCATION = os.path.join(CHATS_LOCATION, 'group_images')
+os.makedirs(GROUP_IMAGES_LOCATION, exist_ok=True)
 
 connected_clients = set()
 email_server = None
@@ -526,9 +530,9 @@ def upload_avatar(data: dict):
 
     session = db_session.create_session()
     user = session.query(User).filter(User.token == token).first()
-    session.close()
 
     if user is None:
+        session.close()
         return {"action": "upload_avatar", "status": "error", "message": "Неверный токен"}
 
     image = base64.decodebytes(bytes(image, encoding='ascii'))
@@ -536,7 +540,129 @@ def upload_avatar(data: dict):
     with open(os.path.join(AVATARS_LOCATION, token + '.png'), 'wb') as file:
         file.write(image)
 
+    user.time_image_updated = time.time()
+    session.commit()
+    session.close()
+
     return {"action": "upload_avatar", "status": "OK", "message": "Успех"}
+
+
+def download_avatar(data: dict):
+    username = data.get('username', None)
+
+    last_time = data.get('time', None)
+
+    if username is None:
+        return {"action": "download_avatar", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+    user = session.query(User).filter(User.name == username).first()
+    session.close()
+
+    if user is None:
+        return {"action": "download_avatar", "status": "error", "message": "Неверное имя пользователя"}
+
+    if user.time_image_updated is None:
+        return {"action": "download_avatar", "status": "OK", "message": "Изображение не обновилось"}
+
+    if last_time is not None:
+        if user.time_image_updated <= last_time:
+            return {"action": "download_avatar", "status": "OK", "message": "Изображение не обновилось", "time": last_time}
+
+    token = user.token
+    image_path = os.path.join(AVATARS_LOCATION, token + '.png')
+
+    if not os.path.exists(image_path):
+        return {"action": "download_avatar", "status": "error", "message": "Изображение не найдено"}
+
+    image = Image.open(image_path)
+
+    byte_buff = io.BytesIO()
+
+    image.save(byte_buff, format='PNG')
+
+    image = base64.encodebytes(byte_buff.getvalue()).decode('ascii')
+
+    return {"action": "download_avatar", "status": "OK", "message": "Успех", "image": image, "username": username, "time": user.time_image_updated}
+
+
+def download_chat_image(data: dict):
+    token = data.get('token', None)
+    chat_id = data.get('chat_id', None)
+
+    last_time = data.get('time', None)
+
+    if token is None or chat_id is None:
+        return {"action": "download_chat_image", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+    user = session.query(User).filter(User.token == token).first()
+
+    if user is None:
+        session.close()
+        return {"action": "download_chat_image", "status": "error", "message": "Неверный токен"}
+
+    chat = session.query(Chat).filter(Chat.id == chat_id).first()
+
+    if chat is None:
+        session.close()
+        return {"action": "download_chat_image", "status": "error", "message": "Неверный id чата"}
+
+    if str(user.id) not in chat.members:
+        session.close()
+        return {"action": "download_chat_image", "status": "error", "message": "Недостаточно прав"}
+
+    if chat.is_private:
+        members = list(map(int, chat.members.split(';')))
+
+        if members[0] == user.id:
+            second_user = members[1]
+        else:
+            second_user = members[0]
+
+        user_s = session.query(User).filter(User.id == second_user).first()
+
+        if user_s.time_image_updated is None:
+            session.close()
+            return {"action": "download_chat_image", "status": "OK", "message": "Изображение не обновилось"}
+        
+        if last_time is not None:
+            if user_s.time_image_updated <= last_time:
+                session.close()
+                return {"action": "download_chat_image", "status": "OK", "message": "Изображение не обновилось"}
+
+        token_s = user_s.token
+        image_path = os.path.join(AVATARS_LOCATION, token_s + '.png')
+        time_image_updated = user_s.time_image_updated
+    else:
+        time_image_updated = chat.time_image_updated
+
+        if time_image_updated is None:
+            session.close()
+            return {"action": "download_chat_image", "status": "OK", "message": "Изображение не обновилось"}
+
+        if last_time is not None:
+            if time_image_updated <= last_time:
+                session.close()
+                return {"action": "download_chat_image", "status": "OK", "message": "Изображение не обновилось"}
+
+        image_path = os.path.join(GROUP_IMAGES_LOCATION, str(chat.id) + '.png')
+
+        if not os.path.exists(image_path):
+            session.close()
+            return {"action": "download_chat_image", "status": "error", "message": "Изображение не найдено"}
+
+    session.close()
+
+    image = Image.open(image_path)
+
+    byte_buff = io.BytesIO()
+
+    image.save(byte_buff, format='PNG')
+
+    image = base64.encodebytes(byte_buff.getvalue()).decode('ascii')
+
+    return {"action": "download_chat_image", "status": "OK", "message": "Успех", "image": image, "chat_id": chat_id, "time": time_image_updated}
 
 
 async def handler(websocket):
@@ -571,6 +697,10 @@ async def handler(websocket):
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(create_group(data), ensure_ascii=False).encode()))
             elif action == 'upload_avatar':
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_avatar(data), ensure_ascii=False).encode()))
+            elif action == 'download_avatar':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_avatar(data), ensure_ascii=False).encode()))
+            elif action == 'download_chat_image':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_chat_image(data), ensure_ascii=False).encode()))
             else:
                 await websocket.send(json.dumps({"status": "error", "message": "Неизвестное действие"}, ensure_ascii=False))
     except websockets.exceptions.ConnectionClosed:

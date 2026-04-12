@@ -18,6 +18,7 @@ class User(SqlAlchemyBase, UserMixin, SerializerMixin):
     hashed_password = sqlalchemy.Column(sqlalchemy.String)
     public_key = sqlalchemy.Column(sqlalchemy.Text)
     chats = sqlalchemy.Column(sqlalchemy.String)
+    time_image_updated = sqlalchemy.Column(sqlalchemy.Integer)
 
     own_chats = orm.relationship("Chat", back_populates='created_by_user')
 
@@ -50,5 +51,6 @@ class Chat(SqlAlchemyBase):
     created_by = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('users.id'))
     is_private = sqlalchemy.Column(sqlalchemy.Boolean)
     name = sqlalchemy.Column(sqlalchemy.String)
+    time_image_updated = sqlalchemy.Column(sqlalchemy.Integer)
 
     created_by_user = orm.relationship('User')
