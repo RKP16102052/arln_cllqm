@@ -28,6 +28,8 @@ import json
 import os
 import base64
 import io
+import uuid
+
 
 HOST = '127.0.0.1'  # Был "130.12.45.26"
 PORT = 8765
@@ -458,6 +460,8 @@ class ChatScreen(MDScreen):
     def on_pre_enter(self):
         self.clear_widgets()
 
+        self.current_chat_id = None
+
         root = MDBoxLayout(orientation="vertical", padding=20, spacing=10)
 
         split_box = MDBoxLayout(orientation="horizontal")
@@ -487,7 +491,7 @@ class ChatScreen(MDScreen):
         buttons_container.add_widget(button_space_container)
         buttons_container.add_widget(settings_chat_button)
         buttons_container.add_widget(add_chat_button)
-
+        
         chats_side.add_widget(chats_scroll)
         chats_side.add_widget(buttons_container)
 
@@ -501,13 +505,16 @@ class ChatScreen(MDScreen):
 
         self.chat_content_scroll.add_widget(self.chat_content)
 
-        message_text_box = MDBoxLayout(orientation="horizontal", spacing=20)
+        message_text_box = MDBoxLayout(orientation="horizontal", spacing=10)
 
         self.message_text = MDTextField(multiline=True, font_size=20)
+        pin_button = MDIconButton(icon='pin')
+        pin_button.on_release = self.pin_file
         send_button = MDIconButton(icon='send')
         send_button.on_release = self.send_message
 
         message_text_box.add_widget(self.message_text)
+        message_text_box.add_widget(pin_button)
         message_text_box.add_widget(send_button)
 
         chats_messages_box.add_widget(self.chat_content_scroll)
@@ -603,10 +610,34 @@ class ChatScreen(MDScreen):
     def go_to_settings(self):
         self.app.open_settings()
 
+    def pin_file(self):
+        file = filechooser.open_file()
+
+        if file is not None and self.current_chat_id is not None:
+            try:
+                file = file[0]
+                name = os.path.split(file)[1]
+                mark = uuid.uuid4().hex
+                chat_id = self.current_chat_id
+
+                self.app.send_files.append((file, name, chat_id, mark))
+
+                data = {
+                    "action": "get_members_keys",
+                    'token': self.app.token,
+                    "chat_id": chat_id
+                }
+
+                self.app.send_to_websocket(data)
+            except Exception as e:
+                print(e)
+
 
 class AddChatScreen(MDScreen):
     def on_pre_enter(self):
         self.clear_widgets()
+
+        self.current_image = None
 
         if self.app.private_key is None:
             self.app.load_private_key()
@@ -656,6 +687,17 @@ class AddChatScreen(MDScreen):
 
         self.members_text = MDTextField(hint_text='Участники группы через ", ", например: "1, 2, 3"')
 
+        image_string = MDBoxLayout(orientation='horizontal', size_hint_y=4)
+
+        self.image_label = MDLabel(text='Изображение: нет')
+
+        image_pin_button = MDIconButton(icon='upload', md_bg_color='#751fff')
+        image_pin_button.on_press = self.pin_image_group
+
+        image_string.add_widget(self.image_label)
+        image_string.add_widget(image_pin_button)
+        image_string.add_widget(MDBoxLayout(size_hint_x=2.5))
+
         self.error_text_group = MDLabel(text='')
         add_button_group = MDIconButton(icon='plus', md_bg_color='#751fff')
         add_button_group.on_release = self.add_group
@@ -663,6 +705,7 @@ class AddChatScreen(MDScreen):
 
         group_layout.add_widget(self.group_name)
         group_layout.add_widget(self.members_text)
+        group_layout.add_widget(image_string)
         group_layout.add_widget(self.error_text_group)
         group_layout.add_widget(add_button_group)
         group_layout.add_widget(space_group)
@@ -729,7 +772,31 @@ class AddChatScreen(MDScreen):
             "name": name,
             "usernames": usernames
         }
+
+        if self.current_image is not None:
+            byte_buff = io.BytesIO()
+
+            self.current_image.save(byte_buff, format='PNG')
+
+            image = base64.encodebytes(byte_buff.getvalue()).decode('ascii')
+
+            data['image'] = image
+
         self.app.send_to_websocket(data)
+
+    def pin_image_group(self):
+        image = filechooser.open_file()
+
+        if image is not None:
+            try:
+                image = image[0]
+                name = os.path.split(image)[1]
+
+                image = PILImage.open(image)
+                self.current_image = image.resize((256, 256))
+                self.image_label.text = 'Изображение: ' + name
+            except Exception:
+                pass
 
 
 class SettingsScreen(MDScreen):
@@ -1067,6 +1134,8 @@ class ChatApp(MDApp):
         self.get_current_messages_event = None
         self.update_chats_images_event = None
 
+        self.send_files = []
+
         self.sm = ScreenManager()
         self.auth_screen = AuthScreen(name="auth")
         self.auth_screen.set_app(self)
@@ -1187,6 +1256,9 @@ class ChatApp(MDApp):
                     chat_id = data['chat_id']
                     messages = [list(i.values())[0] for i in
                                 list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query))]
+                    print(self.send_files)
+                    files = list(filter(lambda x: x[2] == chat_id, self.send_files))
+                    print(files)
 
                     for i in data['content']:
                         public_key = serialization.load_pem_public_key(bytes(list(i.values())[0], encoding='UTF-8'))
@@ -1220,6 +1292,58 @@ class ChatApp(MDApp):
 
                             self.send_to_websocket(data)
 
+                        for m_file in files:
+                            file_name, name, mark = m_file[0], m_file[1], m_file[3]
+
+                            try:
+                                with open(file_name, 'rb') as cur_file:
+                                    file_data = cur_file.read()
+
+                                fin = bytes()
+
+                                for j in range(0, len(file_data), 180):
+                                    now = public_key.encrypt(
+                                        file_data[j:j + 180],
+                                        padding.OAEP(
+                                            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                                            algorithm=hashes.SHA256(),
+                                            label=None
+                                        )
+                                    )
+
+                                    fin += now
+
+                                fin = base64.encodebytes(fin).decode('ascii')
+
+                                or_message = bytes(name, encoding='UTF-8')
+                            
+                                m_fin = bytes()
+
+                                for j in range(0, len(or_message), 180):
+                                    message = public_key.encrypt(
+                                        or_message[j:j + 180],
+                                        padding.OAEP(
+                                            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                                            algorithm=hashes.SHA256(),
+                                            label=None
+                                        )
+                                    )
+
+                                    m_fin += message
+
+                                m_fin = base64.encodebytes(m_fin).decode('ascii')
+
+                                data = {
+                                    "action": "upload_file",
+                                    'data': fin,
+                                    "mark": mark,
+                                    "message": m_fin,
+                                    "to_username": list(i.keys())[0]
+                                }
+
+                                self.send_to_websocket(data)
+                            except Exception as e:
+                                print(e)
 
                     for i in list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query)):
                         del self.chat_screen.messages_query[self.chat_screen.messages_query.index(i)]
@@ -1271,6 +1395,26 @@ class ChatApp(MDApp):
                                 i.image.source = os.path.join(CHATS_IMAGES_DIR, str(data['chat_id']))
                                 Clock.schedule_once(lambda dt: i.image.reload())
                                 break
+            elif action == 'upload_file':
+                if data['status'] == 'OK':
+                    mark = data['mark']
+                    c_message = data['message']
+                    to_username = data['to_username']
+
+                    file = list(filter(lambda x: x[3] == mark, self.send_files))[0]
+
+                    data = {
+                        "action": "send_file",
+                        'token': self.token,
+                        "to_username": to_username,
+                        "message": c_message,
+                        "chat_id": file[2],
+                        "name": data['name']
+                    }
+
+                    self.send_to_websocket(data)
+
+                    del self.send_files[self.send_files.index(file)]
 
         def on_error(ws, error):
             print("WebSocket ошибка:", error)

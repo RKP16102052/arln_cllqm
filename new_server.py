@@ -33,6 +33,8 @@ AVATARS_LOCATION = os.path.join(CHATS_LOCATION, 'avatars')
 os.makedirs(AVATARS_LOCATION, exist_ok=True)
 GROUP_IMAGES_LOCATION = os.path.join(CHATS_LOCATION, 'group_images')
 os.makedirs(GROUP_IMAGES_LOCATION, exist_ok=True)
+FILES_DIR = os.path.join(CHATS_LOCATION, 'files')
+os.makedirs(FILES_DIR, exist_ok=True)
 
 connected_clients = set()
 email_server = None
@@ -450,6 +452,8 @@ def create_group(data: dict):
     usernames = data.get('usernames', None)
     name = data.get('name', None)
 
+    image = data.get('image', None)
+
     if token is None or usernames is None or name is None:
         return {"action": "create_group", "status": "error", "message": "Неверный формат"}
 
@@ -490,6 +494,7 @@ def create_group(data: dict):
     chat.created_by = created_by
     chat.is_private = is_private
     chat.name = name
+    chat.time_image_updated = time.time()
 
     session.add(chat)
     session.commit()
@@ -517,6 +522,11 @@ def create_group(data: dict):
 
     with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'w', encoding='UTF-8') as file:
         json.dump({'data': []}, file)
+
+    image = base64.decodebytes(bytes(image, encoding='ascii'))
+
+    with open(os.path.join(GROUP_IMAGES_LOCATION, str(chat_id) + '.png'), 'wb') as file:
+        file.write(image)
 
     return {"action": "create_group", "status": "OK", "message": "Успех", "id": chat_id}
 
@@ -665,6 +675,106 @@ def download_chat_image(data: dict):
     return {"action": "download_chat_image", "status": "OK", "message": "Успех", "image": image, "chat_id": chat_id, "time": time_image_updated}
 
 
+def upload_file(data: dict):
+    f_data = data.get('data', None)
+
+    mark = data.get('mark', None)
+    message = data.get('message', None)
+    to_username = data.get('to_username', None)
+
+    if f_data is None:
+        return {"action": "upload_file", "status": "error", "message": "Неверный формат"}
+
+    name = uuid.uuid4().hex
+
+    with open(os.path.join(FILES_DIR, name), 'w') as file:
+        file.write(f_data)
+
+    fin = {"action": "upload_file", "status": "OK", "message": "Успех", "name": name}
+
+    if mark is not None:
+        fin['mark'] = mark
+
+    if message is not None:
+        fin['message'] = message
+
+    if to_username is not None:
+        fin['to_username'] = to_username
+
+    return fin 
+
+
+def download_file(data: dict):
+    name = data.get('name', None)
+
+    if name is None:
+        return {"action": "download_file", "status": "error", "message": "Неверный формат"}
+
+    file_path = os.path.join(FILES_DIR, name)
+
+    if os.path.exists(file_path):
+        return {"action": "download_file", "status": "error", "message": "Неверное название"}
+
+    with open(file_path) as file:
+        f_data = file.read()
+
+    return {"action": "download_file", "status": "OK", "message": "Успех", "name": name, "data": f_data}
+
+
+def send_file(data: dict):
+    token = data.get('token', None)
+    name = data.get('name', None)
+    message = data.get('message', None)
+    chat_id = data.get('chat_id', None)
+    to_username = data.get('to_username', None)
+
+    if token is None or name is None or chat_id is None or to_username is None or message is None:
+        return {"action": "send_file", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+
+    chat = session.query(Chat).filter(Chat.id == chat_id).first()
+
+    if chat is None:
+        session.close()
+        return {"action": "send_file", "status": "error", "message": "Неверный id чата"}
+
+    members = chat.members
+
+    user1 = session.query(User).filter(User.token == token).first()
+
+    if user1 is None:
+        session.close()
+        return {"action": "send_file", "status": "error", "message": "Неверный токен"}
+
+    user2 = session.query(User).filter(User.name == to_username).first()
+
+    session.close()
+
+    if user2 is None:
+        return {"action": "send_file", "status": "error", "message": "Неверный токен"}
+
+    if str(user1.id) not in members or str(user2.id) not in members:
+        return {"action": "send_file", "status": "error", "message": "Недостаточно прав"}
+
+    with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'r', encoding='UTF-8') as file:
+        chat_data = json.load(file)
+
+    with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'w', encoding='UTF-8') as file:
+        chat_message = {'from': user1.name,
+                        'to': user2.token,
+                        'type': 'file',
+                        'message': message,
+                        'file': name,
+                        'time': time.time()}
+
+        chat_data['data'].append(chat_message)
+
+        json.dump(chat_data, file, indent=4)
+
+    return {"action": "send_file", "status": "OK", "name": name, "chat_id": chat_id}
+
+
 async def handler(websocket):
     connected_clients.add(websocket)
     try:
@@ -701,6 +811,12 @@ async def handler(websocket):
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(download_avatar(data), ensure_ascii=False).encode()))
             elif action == 'download_chat_image':
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(download_chat_image(data), ensure_ascii=False).encode()))
+            elif action == 'upload_file':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_file(data), ensure_ascii=False).encode()))
+            elif action == 'download_file':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_file(data), ensure_ascii=False).encode()))
+            elif action == 'send_file':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(send_file(data), ensure_ascii=False).encode()))
             else:
                 await websocket.send(json.dumps({"status": "error", "message": "Неизвестное действие"}, ensure_ascii=False))
     except websockets.exceptions.ConnectionClosed:
