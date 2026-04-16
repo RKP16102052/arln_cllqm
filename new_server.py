@@ -35,6 +35,7 @@ GROUP_IMAGES_LOCATION = os.path.join(CHATS_LOCATION, 'group_images')
 os.makedirs(GROUP_IMAGES_LOCATION, exist_ok=True)
 FILES_DIR = os.path.join(CHATS_LOCATION, 'files')
 os.makedirs(FILES_DIR, exist_ok=True)
+FILES_END_FILE = 'files.json'
 
 connected_clients = set()
 email_server = None
@@ -340,15 +341,24 @@ def get_messages(data: dict):
 
     fin = []
 
-    # TODO
     if last_time is None:
         for i in chat_data['data']:
             if i['to'] == token:
-                fin.append({"from": i["from"], "message": i["message"], "time": i["time"]})
+                now = {"from": i["from"], "message": i["message"], "time": i["time"], "type": i['type']}
+
+                if now['type'] == 'file':
+                    now['file'] = i['file']
+
+                fin.append(now)
     else:
         for i in chat_data['data']:
             if i['to'] == token and i['time'] > last_time:
-                fin.append({"from": i["from"], "message": i["message"], "time": i["time"]})
+                now = {"from": i["from"], "message": i["message"], "time": i["time"], "type": i['type']}
+
+                if now['type'] == 'file':
+                    now['file'] = i['file']
+
+                fin.append(now)
 
     session.close()
 
@@ -677,18 +687,39 @@ def download_chat_image(data: dict):
 
 def upload_file(data: dict):
     f_data = data.get('data', None)
+    name = data.get('name', None)
 
     mark = data.get('mark', None)
     message = data.get('message', None)
     to_username = data.get('to_username', None)
+    fin = data.get('fin', False)
 
-    if f_data is None:
+    if f_data is None or name is None:
         return {"action": "upload_file", "status": "error", "message": "Неверный формат"}
 
-    name = uuid.uuid4().hex
+    try:
+        with open(FILES_END_FILE, 'r') as file:
+            content = json.load(file)
 
-    with open(os.path.join(FILES_DIR, name), 'w') as file:
+        if name in content:
+            return {"action": "upload_file", "status": "error", "message": "Недостаточно прав"}
+    except Exception:
+        pass
+
+    with open(os.path.join(FILES_DIR, name), 'a') as file:
         file.write(f_data)
+
+    if fin:
+        try:
+            with open(FILES_END_FILE, 'r') as file:
+                content = json.load(file)
+        except Exception:
+            content = []
+
+        content.append(name)
+
+        with open(FILES_END_FILE, 'w') as file:
+            json.dump(content, file)
 
     fin = {"action": "upload_file", "status": "OK", "message": "Успех", "name": name}
 
@@ -708,17 +739,25 @@ def download_file(data: dict):
     name = data.get('name', None)
 
     if name is None:
-        return {"action": "download_file", "status": "error", "message": "Неверный формат"}
+        return [{"action": "download_file", "status": "error", "message": "Неверный формат"}]
 
     file_path = os.path.join(FILES_DIR, name)
 
-    if os.path.exists(file_path):
-        return {"action": "download_file", "status": "error", "message": "Неверное название"}
+    if not os.path.exists(file_path):
+        return [{"action": "download_file", "status": "error", "message": "Неверное название"}]
 
     with open(file_path) as file:
         f_data = file.read()
 
-    return {"action": "download_file", "status": "OK", "message": "Успех", "name": name, "data": f_data}
+    fin = []
+
+    for i in range(0, len(f_data), 600000):
+        cur_fin = f_data[i:i + 600000]
+        fin.append({"action": "download_file", "status": "OK", "message": "Успех", "name": name, "data": cur_fin})
+
+    fin[-1]['fin'] = True
+
+    return fin
 
 
 def send_file(data: dict):
@@ -814,7 +853,8 @@ async def handler(websocket):
             elif action == 'upload_file':
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_file(data), ensure_ascii=False).encode()))
             elif action == 'download_file':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_file(data), ensure_ascii=False).encode()))
+                for i in download_file(data):
+                    await websocket.send(FERNET_KEY.encrypt(json.dumps(i, ensure_ascii=False).encode()))
             elif action == 'send_file':
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(send_file(data), ensure_ascii=False).encode()))
             else:

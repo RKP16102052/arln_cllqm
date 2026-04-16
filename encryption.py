@@ -64,13 +64,18 @@ class User:
 
 # print(message)
 
-a = bytes('字' * 91, encoding='UTF-8')
+# a = bytes('字' * 91, encoding='UTF-8')
 
-print(len(a))
-print(list(a))
+# print(len(a))
+# print(list(a))
 
 
-for i in range(0, len(a), 180):
-    print(len(a[i:i + 180]))
+# for i in range(0, len(a), 180):
+#     print(len(a[i:i + 180]))
 
-print(hashlib.sha256('12345678'.encode("utf-8")).hexdigest())
+# print(hashlib.sha256('12345678'.encode("utf-8")).hexdigest())
+
+
+for i in range(0, 11, 5):
+    print(i)
+    print(i + 5 >= 11)

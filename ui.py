@@ -2,7 +2,7 @@ from kivymd.app import MDApp
 from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.label import MDLabel
+from kivymd.uix.label import MDLabel, MDIcon
 from kivymd.uix.button import MDIconButton, MDRaisedButton, MDFlatButton
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.scrollview import MDScrollView
@@ -49,6 +49,8 @@ CHATS_DIR = os.path.join(ARLENE_DIR, 'chats')
 os.makedirs(CHATS_DIR, exist_ok=True)
 CHATS_IMAGES_DIR = os.path.join(ARLENE_DIR, 'chats_images')
 os.makedirs(CHATS_IMAGES_DIR, exist_ok=True)
+FILES_DIR = os.path.join(ARLENE_DIR, 'files')
+os.makedirs(FILES_DIR, exist_ok=True)
 
 TOKEN_FILE = os.path.join(ARLENE_DIR, 'token')
 NICKNAME_FILE = os.path.join(ARLENE_DIR, 'nickname.txt')
@@ -104,9 +106,12 @@ class ChatItem(MDBoxLayout, MDFlatButton):
 
 
 class MessageItem(MDBoxLayout):
-    def __init__(self, name, text, own_message=True, content_type="text", **kwargs):
+    def __init__(self, name, text, main_app, own_message=True, content_type="text", file_name=None, **kwargs):
         super().__init__(orientation="horizontal", spacing=10, padding=(10, 0, 10, 0), size_hint_y=None,
                          **kwargs)
+
+        self.content_type = content_type
+        self.app = main_app
 
         self.root = MDBoxLayout(orientation="vertical")
         space_container = MDBoxLayout()
@@ -119,21 +124,55 @@ class MessageItem(MDBoxLayout):
         self.root.size_hint_x = 0.975
         self.root.radius = 10
 
-        self.name_label = MDLabel(text=name, valign="middle", padding=(10, 20, 10, 0))
-        self.name_label.font_size = 19
-        self.name_label.bind(texture_size=self.name_label.setter("size"))
-        self.root.add_widget(self.name_label)
+        if content_type == 'text':
+            self.name_label = MDLabel(text=name, valign="middle", padding=(10, 20, 10, 0))
+            self.name_label.font_size = 19
+            self.name_label.bind(texture_size=self.name_label.setter("size"))
+            self.root.add_widget(self.name_label)
 
-        self.text_label = MDLabel(text=text, valign="top", padding=(15, 0, 15, 0))
-        self.text_label.bind(texture_size=self.text_label.setter("size"))
-        self.root.add_widget(self.text_label)
+            self.text_label = MDLabel(text=text, valign="top", padding=(15, 0, 15, 0))
+            self.text_label.bind(texture_size=self.text_label.setter("size"))
+            self.root.add_widget(self.text_label)
 
-        if own_message:
-            self.name_label.halign = 'left'
-            self.text_label.halign = 'left'
-        else:
-            self.name_label.halign = 'right'
-            self.text_label.halign = 'right'
+            if own_message:
+                self.name_label.halign = 'left'
+                self.text_label.halign = 'left'
+            else:
+                self.name_label.halign = 'right'
+                self.text_label.halign = 'right'
+        elif content_type == 'file':
+            self.file_name = file_name
+
+            self.main_button = MDFlatButton()
+            self.main_button.size = self.root.size
+            self.main_button.on_press = self.download_or_save_file
+            self.root.add_widget(self.main_button)
+
+            main_container = MDBoxLayout(orientation="vertical", spacing=10)
+            self.main_button.add_widget(main_container)
+
+            self.name_label = MDLabel(text=name, valign="middle", padding=(10, 20, 10, 0))
+            self.name_label.font_size = 19
+            self.name_label.bind(texture_size=self.name_label.setter("size"))
+            main_container.add_widget(self.name_label)
+
+            file_container = MDBoxLayout(orientation="horizontal")
+            main_container.add_widget(file_container)
+
+            icon = MDIcon(icon='file', padding=(10, 0, 0, 20))
+            file_container.add_widget(icon)
+
+            self.text_label = MDLabel(text=text, valign="top", padding=(15, 0, 15, 0))
+            self.text_label.bind(texture_size=self.text_label.setter("size"))
+            file_container.add_widget(self.text_label)
+
+            if own_message:
+                self.name_label.halign = 'left'
+                self.text_label.halign = 'left'
+            else:
+                self.name_label.halign = 'right'
+                self.text_label.halign = 'right'
+
 
         self.add_widget(self.root)
 
@@ -144,6 +183,36 @@ class MessageItem(MDBoxLayout):
     def adjust_size(self):
         self.height = self.name_label.texture_size[1] + self.text_label.texture_size[1] + 25
         self.name_label.size_hint_y = self.name_label.texture_size[1] / self.height
+
+        if self.content_type == 'file':
+            self.main_button.size = self.root.size
+            self.height = self.main_button.height
+
+    def download_or_save_file(self):
+        if os.path.exists(os.path.join(FILES_DIR, self.file_name)):
+            self.save_file()
+        else:
+            self.download_file()
+
+    def download_file(self):
+        data = {
+            "action": "download_file",
+            "name": self.file_name
+        }
+
+        self.app.send_to_websocket(data)
+
+    def save_file(self):
+        file_name = filechooser.save_file(path=self.text_label.text)
+
+        if file_name is not None:
+            file_name = file_name[0]
+
+            with open(os.path.join(FILES_DIR, self.file_name), 'rb') as file:
+                data = file.read()
+
+            with open(file_name, 'wb') as file:
+                file.write(data)
 
 
 class AuthTab(MDBoxLayout, MDTabsBase):
@@ -535,13 +604,16 @@ class ChatScreen(MDScreen):
         self.app.sm.current = 'add_chat'
 
     def update_chats(self):
-        with open(CHATS_FILE) as file:
-            data = json.load(file)
+        try:
+            with open(CHATS_FILE) as file:
+                data = json.load(file)
 
-        self.chats_box.clear_widgets()
+            self.chats_box.clear_widgets()
 
-        for i in data:
-            self.chats_box.add_widget(ChatItem(i['name'], i['id'], '', self))
+            for i in data:
+                self.chats_box.add_widget(ChatItem(i['name'], i['id'], '', self))
+        except Exception as e:
+            print(e)
 
     def open_chat(self, chat_id, download: bool = True):
         try:
@@ -563,7 +635,8 @@ class ChatScreen(MDScreen):
 
         for i in data:
             own_message = self.app.nickname == i['from']
-            self.chat_content.add_widget(MessageItem(i['from'], i['message'], own_message))
+            f_data = i.get('file', None)
+            self.chat_content.add_widget(MessageItem(i['from'], i['message'], self.app, own_message, i['type'], f_data))
 
     def download_chat(self, chat_id):
         chat_file = os.path.join(CHATS_DIR, str(chat_id))
@@ -1135,6 +1208,7 @@ class ChatApp(MDApp):
         self.update_chats_images_event = None
 
         self.send_files = []
+        self.get_sending_files = {}
 
         self.sm = ScreenManager()
         self.auth_screen = AuthScreen(name="auth")
@@ -1234,8 +1308,13 @@ class ChatApp(MDApp):
 
                         fin = fin.decode()
 
-                        fin_data.append({'from': i['from'], 'message': fin,
-                                         'time': i['time']})
+                        cur = {'from': i['from'], 'message': fin,
+                               'time': i['time'], 'type': i['type']}
+
+                        if cur['type'] == 'file':
+                            cur['file'] = i['file']
+
+                        fin_data.append(cur)
 
                     chat_file = os.path.join(CHATS_DIR, str(data['chat_id']))
 
@@ -1256,9 +1335,7 @@ class ChatApp(MDApp):
                     chat_id = data['chat_id']
                     messages = [list(i.values())[0] for i in
                                 list(filter(lambda x: chat_id in list(x.keys()), self.chat_screen.messages_query))]
-                    print(self.send_files)
                     files = list(filter(lambda x: x[2] == chat_id, self.send_files))
-                    print(files)
 
                     for i in data['content']:
                         public_key = serialization.load_pem_public_key(bytes(list(i.values())[0], encoding='UTF-8'))
@@ -1302,6 +1379,7 @@ class ChatApp(MDApp):
                                 fin = bytes()
 
                                 for j in range(0, len(file_data), 180):
+                                    print(len(file_data) - j)
                                     now = public_key.encrypt(
                                         file_data[j:j + 180],
                                         padding.OAEP(
@@ -1313,7 +1391,8 @@ class ChatApp(MDApp):
 
                                     fin += now
 
-                                fin = base64.encodebytes(fin).decode('ascii')
+                                fin = base64.encodebytes(fin)
+                                print(len(fin))
 
                                 or_message = bytes(name, encoding='UTF-8')
                             
@@ -1333,15 +1412,29 @@ class ChatApp(MDApp):
 
                                 m_fin = base64.encodebytes(m_fin).decode('ascii')
 
-                                data = {
-                                    "action": "upload_file",
-                                    'data': fin,
-                                    "mark": mark,
-                                    "message": m_fin,
-                                    "to_username": list(i.keys())[0]
-                                }
+                                num = 0
+                                f_name = uuid.uuid4().hex
 
-                                self.send_to_websocket(data)
+                                for k in range(0, len(fin), 600000):
+                                    cur_fin = fin[k:k + 600000].decode('ascii')
+
+                                    data = {
+                                        "action": "upload_file",
+                                        'data': cur_fin,
+                                        "mark": mark,
+                                        "message": m_fin,
+                                        "to_username": list(i.keys())[0],
+                                        "name": f_name
+                                    }
+
+                                    if k + 600000 >= len(fin):
+                                        data['fin'] = True
+
+                                    self.send_to_websocket(data)
+                                    num += 1
+
+                                self.get_sending_files[mark] = self.get_sending_files.get(mark, {})
+                                self.get_sending_files[mark][list(i.keys())[0]] = num
                             except Exception as e:
                                 print(e)
 
@@ -1403,18 +1496,48 @@ class ChatApp(MDApp):
 
                     file = list(filter(lambda x: x[3] == mark, self.send_files))[0]
 
-                    data = {
-                        "action": "send_file",
-                        'token': self.token,
-                        "to_username": to_username,
-                        "message": c_message,
-                        "chat_id": file[2],
-                        "name": data['name']
-                    }
+                    self.get_sending_files[mark][to_username] -= 1
 
-                    self.send_to_websocket(data)
+                    if not self.get_sending_files[mark][to_username]:
+                        data = {
+                            "action": "send_file",
+                            'token': self.token,
+                            "to_username": to_username,
+                            "message": c_message,
+                            "chat_id": file[2],
+                            "name": data['name']
+                        }
 
-                    del self.send_files[self.send_files.index(file)]
+                        self.send_to_websocket(data)
+
+                        del self.get_sending_files[mark][to_username]
+
+                        if not self.get_sending_files[mark]:
+                            del self.send_files[self.send_files.index(file)]
+            elif action == 'download_file':
+                if data['status'] == 'OK':
+                    with open(os.path.join(FILES_DIR, data['name']), 'a') as file:
+                        file.write(data['data'])
+                    
+                    if data.get('fin', False):
+                        with open(os.path.join(FILES_DIR, data['name'])) as file:
+                            f_data = file.read()
+
+                        padd = padding.OAEP(
+                            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                            algorithm=hashes.SHA256(),
+                            label=None
+                        )
+
+                        f_data = base64.decodebytes(bytes(f_data, encoding='ascii'))
+
+                        fin = bytes()
+
+                        for j in range(0, len(f_data), 256):
+                            fin += self.private_key.decrypt(f_data[j:j + 256], padd)
+
+                        with open(os.path.join(FILES_DIR, data['name']), 'wb') as file:
+                            file.write(fin)
 
         def on_error(ws, error):
             print("WebSocket ошибка:", error)
@@ -1534,6 +1657,36 @@ class ChatApp(MDApp):
         
         try:
             os.remove(CHATS_FILE)
+        except FileNotFoundError:
+            pass
+
+        try:
+            os.remove(IMAGES_TIME_FILE)
+        except FileNotFoundError:
+            pass
+
+        try:
+            os.remove(AVATAR_LOCATION)
+        except FileNotFoundError:
+            pass
+
+        try:
+            os.remove(AVATAR_TIME_LOCATION)
+        except FileNotFoundError:
+            pass
+
+        try:
+            os.rmdir(CHATS_DIR)
+        except FileNotFoundError:
+            pass
+
+        try:
+            os.rmdir(CHATS_IMAGES_DIR)
+        except FileNotFoundError:
+            pass
+
+        try:
+            os.rmdir(FILES_DIR)
         except FileNotFoundError:
             pass
 
