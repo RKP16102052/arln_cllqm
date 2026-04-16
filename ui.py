@@ -29,6 +29,7 @@ import os
 import base64
 import io
 import uuid
+import shutil
 
 
 HOST = '127.0.0.1'  # Был "130.12.45.26"
@@ -1676,18 +1677,18 @@ class ChatApp(MDApp):
             pass
 
         try:
-            os.rmdir(CHATS_DIR)
-        except FileNotFoundError:
+            shutil.rmtree(CHATS_DIR)
+        except Exception:
             pass
 
         try:
-            os.rmdir(CHATS_IMAGES_DIR)
-        except FileNotFoundError:
+            shutil.rmtree(CHATS_IMAGES_DIR)
+        except Exception:
             pass
 
         try:
-            os.rmdir(FILES_DIR)
-        except FileNotFoundError:
+            shutil.rmtree(FILES_DIR)
+        except Exception:
             pass
 
         self.sm.current = 'auth'
