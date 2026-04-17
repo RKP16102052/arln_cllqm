@@ -1,3 +1,6 @@
+from kivy.config import Config
+Config.set('graphics', 'resizable', '0')
+
 from kivymd.app import MDApp
 from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.screen import MDScreen
@@ -10,6 +13,7 @@ from kivymd.uix.tab import MDTabsBase
 from kivymd.uix.tab import MDTabs
 from kivy.uix.image import Image
 from kivymd.uix.dialog import MDDialog
+from kivy.core.window import Window
 
 from kivy.utils import platform
 from kivy.clock import Clock
@@ -38,7 +42,18 @@ FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
 
 WEBSOCKET_URL = f"ws://{HOST}:{PORT}"
 
-LOCAL_DIR = os.path.join(os.path.expanduser("~"), ".local")
+if platform == 'android':
+    from jnius import autoclass
+    from android.storage import primary_external_storage_path
+    
+    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+    activity = PythonActivity.mActivity
+    context = activity.getApplicationContext()
+    
+    LOCAL_DIR = context.getExternalFilesDir(None).getAbsolutePath()
+else:
+    LOCAL_DIR = os.path.join(os.path.expanduser("~"), ".local")
+    
 os.makedirs(LOCAL_DIR, exist_ok=True)
 SHARE_DIR = os.path.join(LOCAL_DIR, 'share')
 os.makedirs(SHARE_DIR, exist_ok=True)
@@ -61,9 +76,10 @@ AVATAR_TIME_LOCATION = os.path.join(ARLENE_DIR, 'avatar_time')
 IMAGES_TIME_FILE = os.path.join(ARLENE_DIR, 'images_time.json')
 
 
+
 class ChatItem(MDBoxLayout, MDFlatButton):
     def __init__(self, name, chat_id, image, chat_screen, **kwargs):
-        super().__init__(orientation="horizontal", size_hint=(4, None), **kwargs)
+        super().__init__(orientation="horizontal", size_hint=(1, None), **kwargs)
         self.chat_id = chat_id
         self.chat_screen = chat_screen
 
@@ -73,7 +89,9 @@ class ChatItem(MDBoxLayout, MDFlatButton):
         self.line_color = 'gray'
         self.line_width = 2
 
-        image_container = MDBoxLayout()
+        root = MDBoxLayout(orientation='horizontal')
+
+        image_container = MDBoxLayout(size_hint_x=0.001)
         image_container.padding = (-100, 0, 0, 5)
 
         self.image = Image(source=image, size_hint=(None, None))
@@ -89,15 +107,17 @@ class ChatItem(MDBoxLayout, MDFlatButton):
 
         image_container.add_widget(self.image)
 
-        text_container = MDBoxLayout()
+        text_container = MDBoxLayout(size_hint_x=3)
         self.label = MDLabel(text=name, halign="left", valign="middle", size_hint=(1, None))
-        text_container.padding = (-110, 0, 0, -20)
+        text_container.padding = (0, 0, 0, -20)
         text_container.add_widget(self.label)
 
         self.on_release = lambda *args: self.on_open()
 
-        self.add_widget(image_container)
-        self.add_widget(text_container)
+        root.add_widget(image_container)
+        root.add_widget(text_container)
+
+        self.add_widget(root)
 
     def on_open(self):
         self.chat_screen.open_chat(self.chat_id)
@@ -532,16 +552,26 @@ class ChatScreen(MDScreen):
 
         self.current_chat_id = None
 
+        width, height = Window.size
+
+        if width > height:
+            self.phone_mode = False
+        else:
+            self.phone_mode = True
+
         root = MDBoxLayout(orientation="vertical", padding=20, spacing=10)
 
         split_box = MDBoxLayout(orientation="horizontal")
 
         chats_side = MDBoxLayout(orientation="vertical")
-        chats_side.size_hint_x = 0.52
+
+        if not self.phone_mode:
+            chats_side.size_hint_x = 0.52
 
         chats_scroll = MDScrollView(do_scroll_x=False)
         chats_scroll.always_overscroll = False
-        self.chats_box = MDBoxLayout(orientation="vertical", spacing=0, adaptive_size=True)
+        self.chats_box = MDBoxLayout(orientation="vertical", spacing=0)
+        self.chats_box.adaptive_height = True
 
         chats_scroll.add_widget(self.chats_box)
 
@@ -591,12 +621,15 @@ class ChatScreen(MDScreen):
         chats_messages_box.add_widget(message_text_box)
 
         split_box.add_widget(chats_side)
-        split_box.add_widget(chats_messages_box)
+
+        if not self.phone_mode:
+            split_box.add_widget(chats_messages_box)
 
         root.add_widget(split_box)
         self.add_widget(root)
 
         self.update_chats()
+        self.app.get_chats_images()
 
     def set_app(self, app):
         self.app = app
@@ -613,31 +646,41 @@ class ChatScreen(MDScreen):
 
             for i in data:
                 self.chats_box.add_widget(ChatItem(i['name'], i['id'], '', self))
+
+            self.chats_box.add_widget(MDBoxLayout(size_hint_y=1))
         except Exception as e:
             print(e)
 
     def open_chat(self, chat_id, download: bool = True):
-        try:
-            self.current_chat_id = chat_id
+        if self.phone_mode:
+            self.app.sm.current = 'phone_chat'
+            self.app.phone_chat_screen.open_chat(chat_id, download)
+        else:
+            try:
+                self.current_chat_id = chat_id
 
-            if download:
-                self.chat_content_scroll.scroll_y = 0
-                self.download_chat(chat_id)
+                if download:
+                    self.chat_content_scroll.scroll_y = 0
+                    self.download_chat(chat_id)
 
-            with open(os.path.join(CHATS_DIR, str(chat_id))) as file:
-                data = json.load(file)
+                with open(os.path.join(CHATS_DIR, str(chat_id))) as file:
+                    data = json.load(file)
 
-            Clock.schedule_once(lambda dt: self.show_messages(data))
-        except Exception:
-            self.show_messages([])
+                Clock.schedule_once(lambda dt: self.show_messages(data))
+            except Exception:
+                self.show_messages([])
 
     def show_messages(self, data):
-        self.chat_content.clear_widgets()
+        if self.phone_mode:
+            self.app.sm.current = 'phone_chat'
+            self.app.phone_chat_screen.open_chat(chat_id, download)
+        else:
+            self.chat_content.clear_widgets()
 
-        for i in data:
-            own_message = self.app.nickname == i['from']
-            f_data = i.get('file', None)
-            self.chat_content.add_widget(MessageItem(i['from'], i['message'], self.app, own_message, i['type'], f_data))
+            for i in data:
+                own_message = self.app.nickname == i['from']
+                f_data = i.get('file', None)
+                self.chat_content.add_widget(MessageItem(i['from'], i['message'], self.app, own_message, i['type'], f_data))
 
     def download_chat(self, chat_id):
         chat_file = os.path.join(CHATS_DIR, str(chat_id))
@@ -705,6 +748,125 @@ class ChatScreen(MDScreen):
                 self.app.send_to_websocket(data)
             except Exception as e:
                 print(e)
+
+
+class PhoneChatScreen(ChatScreen):
+    def __init__(self, chat_screen, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.chat_screen = chat_screen
+
+    def on_pre_enter(self):
+        self.clear_widgets()
+
+        root = MDBoxLayout(orientation="vertical", padding=20, spacing=10)
+
+        split_box = MDBoxLayout(orientation="horizontal")
+
+        chats_messages_box = MDBoxLayout(orientation="vertical", padding=20, spacing=30)
+
+        header_box = MDBoxLayout(orientation="horizontal", size_hint_y=0.1)
+
+        back_button = MDIconButton(icon='arrow-left', md_bg_color='#751fff')
+        back_button.on_press = self.back_to_chats
+
+        header_box.add_widget(back_button)
+        header_box.add_widget(MDBoxLayout(size_hint_x=1))
+
+        self.chat_content_scroll = MDScrollView(do_scroll_x=False)
+        self.chat_content = MDBoxLayout(orientation="vertical", spacing=30)
+        self.chat_content_scroll.size_hint_y = 5
+        self.chat_content.size_hint_y = None
+        self.chat_content.bind(minimum_height=self.chat_content.setter("height"))
+
+        self.chat_content_scroll.add_widget(self.chat_content)
+
+        message_text_box = MDBoxLayout(orientation="horizontal", spacing=10)
+
+        self.message_text = MDTextField(multiline=True, font_size=20)
+        pin_button = MDIconButton(icon='pin')
+        pin_button.on_release = self.pin_file
+        send_button = MDIconButton(icon='send')
+        send_button.on_release = self.send_message
+
+        message_text_box.add_widget(self.message_text)
+        message_text_box.add_widget(pin_button)
+        message_text_box.add_widget(send_button)
+
+        chats_messages_box.add_widget(header_box)
+        chats_messages_box.add_widget(self.chat_content_scroll)
+        chats_messages_box.add_widget(message_text_box)
+
+        split_box.add_widget(chats_messages_box)
+
+        root.add_widget(split_box)
+        self.add_widget(root)
+
+    def open_chat(self, chat_id, download: bool = True):
+        try:
+            self.app.chat_screen.current_chat_id = chat_id
+
+            if download:
+                self.chat_content_scroll.scroll_y = 0
+                self.download_chat(chat_id)
+
+            with open(os.path.join(CHATS_DIR, str(chat_id))) as file:
+                data = json.load(file)
+
+            Clock.schedule_once(lambda dt: self.show_messages(data))
+        except Exception:
+            self.show_messages([])
+
+    def show_messages(self, data):
+        self.chat_content.clear_widgets()
+
+        for i in data:
+            own_message = self.app.nickname == i['from']
+            f_data = i.get('file', None)
+            self.chat_content.add_widget(MessageItem(i['from'], i['message'], self.app, own_message, i['type'], f_data))
+
+    def send_message(self):
+        message = self.message_text.text
+
+        if self.app.chat_screen.current_chat_id is not None:
+            self.app.chat_screen.messages_query.append({self.app.chat_screen.current_chat_id: message})
+
+            data = {
+                "action": "get_members_keys",
+                'token': self.app.token,
+                "chat_id": self.app.chat_screen.current_chat_id
+            }
+
+            self.app.send_to_websocket(data)
+            self.message_text.text = ''
+
+    def get_current_chat_messages(self):
+        if self.app.chat_screen.current_chat_id is not None:
+            self.download_chat(self.app.chat_screen.current_chat_id)
+
+    def pin_file(self):
+        file = filechooser.open_file()
+
+        if file is not None and self.app.chat_screen.current_chat_id is not None:
+            try:
+                file = file[0]
+                name = os.path.split(file)[1]
+                mark = uuid.uuid4().hex
+                chat_id = self.app.chat_screen.current_chat_id
+
+                self.app.send_files.append((file, name, chat_id, mark))
+
+                data = {
+                    "action": "get_members_keys",
+                    'token': self.app.token,
+                    "chat_id": chat_id
+                }
+
+                self.app.send_to_websocket(data)
+            except Exception as e:
+                print(e)
+
+    def back_to_chats(self):
+        self.app.sm.current = 'chat'
 
 
 class AddChatScreen(MDScreen):
@@ -894,7 +1056,7 @@ class SettingsScreen(MDScreen):
 
         content_box = MDBoxLayout(orientation='vertical', size_hint_y=8)
 
-        image_container = MDBoxLayout(size_hint=(1, 7))
+        self.image_container = MDBoxLayout(size_hint=(1, 7))
 
         h_image_container = MDBoxLayout(orientation='horizontal')
 
@@ -911,7 +1073,7 @@ class SettingsScreen(MDScreen):
         h_image_container.add_widget(self.image)
         h_image_container.add_widget(MDBoxLayout(size_hint_x=1))
 
-        image_container.add_widget(h_image_container)
+        self.image_container.add_widget(h_image_container)
 
         h_upload_box = MDBoxLayout(orientation='horizontal')
 
@@ -967,12 +1129,21 @@ class SettingsScreen(MDScreen):
         content_box.add_widget(MDBoxLayout(size_hint_y=1))
 
         root.add_widget(header_box)
-        root.add_widget(image_container)
+        root.add_widget(self.image_container)
         root.add_widget(content_box)
 
         self.add_widget(root)
 
         self.update_avatar()
+
+    def on_enter(self, *args):
+        super().on_enter(*args)
+        image_width = self.image.height / Window.size[0]
+        space_width = (1 - image_width) / 2
+
+        self.image_container.children[0].children[0].size_hint_x = space_width
+        self.image_container.children[0].children[1].size_hint_x = image_width
+        self.image_container.children[0].children[2].size_hint_x = space_width
 
     def set_app(self, app):
         self.app = app
@@ -1221,6 +1392,8 @@ class ChatApp(MDApp):
 
         self.chat_screen = ChatScreen(name="chat")
         self.chat_screen.set_app(self)
+        self.phone_chat_screen = PhoneChatScreen(self.chat_screen, name='phone_chat')
+        self.phone_chat_screen.set_app(self)        
         self.add_chat_screen = AddChatScreen(name='add_chat')
         self.add_chat_screen.set_app(self)
         self.settings_screen = SettingsScreen(name='settings')
@@ -1232,6 +1405,7 @@ class ChatApp(MDApp):
         self.sm.add_widget(self.add_chat_screen)
         self.sm.add_widget(self.settings_screen)
         self.sm.add_widget(self.import_key_screen)
+        self.sm.add_widget(self.phone_chat_screen)
 
         self.start_websocket()
 

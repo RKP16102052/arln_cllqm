@@ -75,7 +75,6 @@ class User:
 
 # print(hashlib.sha256('12345678'.encode("utf-8")).hexdigest())
 
-
-for i in range(0, 11, 5):
-    print(i)
-    print(i + 5 >= 11)
+import pygame
+pygame.init()
+print(pygame.image.get_extended())
