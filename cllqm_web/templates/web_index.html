@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Arlene Messenger — Веб-клиент (финал)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        }
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .app-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            background-color: #1e1e1e;
+            transition: opacity 0.2s ease;
+            opacity: 0;
+            visibility: hidden;
+            padding: 20px;
+        }
+        .screen.active {
+            opacity: 1;
+            visibility: visible;
+            z-index: 10;
+        }
+        .md-card {
+            background-color: #2c2c2c;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .md-button {
+            background-color: #751fff;
+            border: none;
+            border-radius: 28px;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 500;
+            color: white;
+            cursor: pointer;
+            transition: 0.2s;
+            text-align: center;
+            display: inline-block;
+        }
+        .md-button:hover {
+            background-color: #9a4dff;
+        }
+        .md-button-outline {
+            background-color: transparent;
+            border: 1px solid #751fff;
+            color: #751fff;
+        }
+        .md-text-field {
+            background-color: #2c2c2c;
+            border: 1px solid #3a3a3a;
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 16px;
+            color: white;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+        .md-text-field:focus {
+            outline: none;
+            border-color: #751fff;
+        }
+        .error-label {
+            color: #ff7a7a;
+            font-size: 14px;
+            margin-top: -8px;
+            margin-bottom: 16px;
+        }
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid #3a3a3a;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            color: #aaa;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active {
+            color: #751fff;
+            border-bottom: 2px solid #751fff;
+        }
+        .chat-layout {
+            display: flex;
+            height: 100%;
+            gap: 20px;
+        }
+        .chats-side {
+            width: 30%;
+            background-color: #1e1e1e;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .chats-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .chat-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background-color: #2c2c2c;
+            margin-bottom: 8px;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: 0.1s;
+        }
+        .chat-item:hover {
+            background-color: #3a3a3a;
+        }
+        .chat-avatar {
+            width: 48px;
+            height: 48px;
+            background-color: #751fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        .chat-name {
+            font-weight: 500;
+        }
+        .messages-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #1e1e1e;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        .messages-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .message {
+            max-width: 70%;
+            padding: 10px 14px;
+            border-radius: 18px;
+            font-size: 14px;
+            word-wrap: break-word;
+        }
+        .message-own {
+            background-color: #751fff;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        .message-other {
+            background-color: #2c2c2c;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+        .message-name {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-bottom: 4px;
+        }
+        .input-area {
+            display: flex;
+            gap: 12px;
+            padding: 16px;
+            background-color: #2c2c2c;
+            border-radius: 28px;
+            margin: 16px;
+        }
+        .input-area input {
+            flex: 1;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 16px;
+        }
+        .input-area input:focus {
+            outline: none;
+        }
+        .send-btn {
+            background-color: #751fff;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .flex-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .space-between {
+            justify-content: space-between;
+        }
+        .text-center {
+            text-align: center;
+        }
+        .w-100 {
+            width: 100%;
+        }
+        .mt-3 {
+            margin-top: 12px;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script>
+        // ---------- Fernet для браузера (совместимо с Python cryptography.fernet) ----------
+        (function() {
+            window.Fernet = {};
+
+            function b64ToBytes(b64) {
+                let standard = b64.replace(/-/g, '+').replace(/_/g, '/');
+                while (standard.length % 4) standard += '=';
+                const bin = atob(standard);
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                return bytes;
+            }
+
+            function bytesToB64(bytes) {
+                let binary = '';
+                for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                let b64 = btoa(binary);
+                b64 = b64.replace(/\+/g, '-').replace(/\//g, '_');
+                while (b64.length % 4) b64 += '=';
+                return b64;
+            }
+
+            async function getKeyBytes(keyBase64) {
+                return b64ToBytes(keyBase64);
+            }
+
+            window.Fernet.encrypt = async function(plaintext, keyBase64) {
+                const key = await getKeyBytes(keyBase64);
+                const signingKey = key.slice(0, 16);
+                const encryptionKey = key.slice(16, 32);
+
+                const version = new Uint8Array([0x80]);
+                const timestamp = new Uint8Array(8);
+                let ts = Math.floor(Date.now() / 1000);
+                for (let i = 7; i >= 0; i--) {
+                    timestamp[i] = ts & 0xff;
+                    ts >>= 8;
+                }
+
+                const iv = crypto.getRandomValues(new Uint8Array(8));
+                const plainBytes = new TextEncoder().encode(plaintext);
+                // PKCS7 padding
+                const blockSize = 16;
+                const padLen = blockSize - (plainBytes.length % blockSize);
+                const padded = new Uint8Array(plainBytes.length + padLen);
+                padded.set(plainBytes);
+                for (let i = 0; i < padLen; i++) padded[plainBytes.length + i] = padLen;
+
+                const fullIv = new Uint8Array(16);
+                fullIv.set(iv, 0);
+                const aesKey = await crypto.subtle.importKey("raw", encryptionKey, { name: "AES-CBC" }, false, ["encrypt"]);
+                const ciphertextBuf = await crypto.subtle.encrypt({ name: "AES-CBC", iv: fullIv }, aesKey, padded);
+                const ciphertext = new Uint8Array(ciphertextBuf);
+
+                // HMAC
+                const toSign = new Uint8Array(1 + 8 + 8 + ciphertext.length);
+                toSign.set(version, 0);
+                toSign.set(timestamp, 1);
+                toSign.set(iv, 1 + 8);
+                toSign.set(ciphertext, 1 + 8 + 8);
+                const hmacKey = await crypto.subtle.importKey("raw", signingKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+                const hmacBuf = await crypto.subtle.sign("HMAC", hmacKey, toSign);
+                const hmac = new Uint8Array(hmacBuf).slice(0, 32);
+
+                const result = new Uint8Array(1 + 8 + 8 + ciphertext.length + 32);
+                result.set(version, 0);
+                result.set(timestamp, 1);
+                result.set(iv, 1 + 8);
+                result.set(ciphertext, 1 + 8 + 8);
+                result.set(hmac, 1 + 8 + 8 + ciphertext.length);
+                return bytesToB64(result);
+            };
+
+            window.Fernet.decrypt = async function(tokenB64, keyBase64) {
+                const data = b64ToBytes(tokenB64);
+                const key = await getKeyBytes(keyBase64);
+                const signingKey = key.slice(0, 16);
+                const encryptionKey = key.slice(16, 32);
+
+                if (data.length < 1 + 8 + 8 + 32) throw new Error("Invalid token length");
+                const version = data[0];
+                if (version !== 0x80) throw new Error("Unsupported version");
+                const timestamp = data.slice(1, 9);
+                const iv = data.slice(9, 17);
+                const ciphertext = data.slice(17, data.length - 32);
+                const hmacReceived = data.slice(data.length - 32);
+
+                const toVerify = data.slice(0, data.length - 32);
+                const hmacKey = await crypto.subtle.importKey("raw", signingKey, { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+                const isValid = await crypto.subtle.verify("HMAC", hmacKey, hmacReceived, toVerify);
+                if (!isValid) throw new Error("HMAC mismatch");
+
+                const fullIv = new Uint8Array(16);
+                fullIv.set(iv, 0);
+                const aesKey = await crypto.subtle.importKey("raw", encryptionKey, { name: "AES-CBC" }, false, ["decrypt"]);
+                const paddedPlain = await crypto.subtle.decrypt({ name: "AES-CBC", iv: fullIv }, aesKey, ciphertext);
+                const paddedBytes = new Uint8Array(paddedPlain);
+                const padLen = paddedBytes[paddedBytes.length - 1];
+                if (padLen < 1 || padLen > 16) throw new Error("Invalid padding");
+                return new TextDecoder().decode(paddedBytes.slice(0, paddedBytes.length - padLen));
+            };
+        })();
+    </script>
+</head>
+<body>
+<div class="app-container">
+    <!-- Экран авторизации -->
+    <div id="auth-screen" class="screen active">
+        <div class="md-card" style="max-width: 500px; margin: 40px auto;">
+            <h2 class="text-center">Добро пожаловать!</h2>
+            <div class="tabs" id="auth-tabs">
+                <div class="tab active" data-tab="login">Авторизация</div>
+                <div class="tab" data-tab="register">Регистрация</div>
+            </div>
+            <div id="login-panel">
+                <input type="email" id="login-email" class="md-text-field" placeholder="Электронная почта">
+                <input type="password" id="login-password" class="md-text-field" placeholder="Пароль">
+                <div id="login-error" class="error-label"></div>
+                <button id="login-btn" class="md-button w-100">Войти</button>
+            </div>
+            <div id="register-panel" style="display:none;">
+                <input type="text" id="reg-nick" class="md-text-field" placeholder="Имя пользователя">
+                <input type="email" id="reg-email" class="md-text-field" placeholder="Электронная почта">
+                <input type="password" id="reg-password" class="md-text-field" placeholder="Пароль (мин. 8 символов)">
+                <div id="reg-error" class="error-label"></div>
+                <button id="reg-btn" class="md-button w-100">Зарегистрироваться</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Код подтверждения -->
+    <div id="code-screen" class="screen">
+        <div class="md-card" style="max-width: 500px; margin: 40px auto;">
+            <h2 class="text-center">Код подтверждения</h2>
+            <p class="text-center">На указанную почту отправлен 6-значный код</p>
+            <input type="text" id="code-input" class="md-text-field" placeholder="Код" maxlength="6">
+            <div id="code-error" class="error-label"></div>
+            <button id="verify-btn" class="md-button w-100">Подтвердить</button>
+            <button id="back-to-auth" class="md-button md-button-outline w-100 mt-3">Назад</button>
+        </div>
+    </div>
+
+    <!-- Импорт ключа -->
+    <div id="import-screen" class="screen">
+        <div class="md-card" style="max-width: 600px; margin: 40px auto;">
+            <h2 class="text-center">Импорт ключа</h2>
+            <p>Для работы требуется импортировать файл ключа (.key). Получите его на авторизованном устройстве через "Экспорт ключа" в настройках.</p>
+            <input type="file" id="import-file" accept=".key,.txt">
+            <div id="import-error" class="error-label"></div>
+            <button id="import-submit" class="md-button w-100 mt-3">Импортировать</button>
+            <button id="logout-after-import" class="md-button-outline md-button w-100 mt-3">Выйти из аккаунта</button>
+        </div>
+    </div>
+
+    <!-- Основной чат -->
+    <div id="chat-screen" class="screen">
+        <div class="chat-layout">
+            <div class="chats-side">
+                <div class="flex-row space-between" style="padding: 16px;">
+                    <h3>Чаты</h3>
+                    <div>
+                        <button id="settings-btn" class="md-button-outline md-button" style="padding: 8px 12px;"><i class="fas fa-cog"></i></button>
+                        <button id="add-chat-btn" class="md-button-outline md-button" style="padding: 8px 12px;"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+                <div id="chats-list" class="chats-list"></div>
+            </div>
+            <div class="messages-area">
+                <div id="messages-scroll" class="messages-scroll"></div>
+                <div class="input-area">
+                    <input type="text" id="message-input" placeholder="Сообщение...">
+                    <button id="send-message-btn" class="send-btn"><i class="fas fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Добавление чата -->
+    <div id="add-chat-screen" class="screen">
+        <div class="md-card" style="max-width: 600px; margin: 40px auto;">
+            <div class="flex-row space-between">
+                <button id="back-to-chat-from-add" class="md-button-outline md-button"><i class="fas fa-arrow-left"></i> Назад</button>
+                <h3>Добавить чат</h3>
+                <div></div>
+            </div>
+            <div class="tabs" id="add-tabs">
+                <div class="tab active" data-addtab="personal">Личный чат</div>
+                <div class="tab" data-addtab="group">Группа</div>
+            </div>
+            <div id="personal-panel">
+                <input type="text" id="personal-username" class="md-text-field" placeholder="Имя пользователя">
+                <div id="personal-error" class="error-label"></div>
+                <button id="create-personal-btn" class="md-button w-100">Создать чат</button>
+            </div>
+            <div id="group-panel" style="display:none;">
+                <input type="text" id="group-name" class="md-text-field" placeholder="Название группы">
+                <input type="text" id="group-members" class="md-text-field" placeholder="Участники через запятую (username1, username2)">
+                <div id="group-error" class="error-label"></div>
+                <button id="create-group-btn" class="md-button w-100">Создать группу</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Настройки -->
+    <div id="settings-screen" class="screen">
+        <div class="md-card" style="max-width: 600px; margin: 40px auto;">
+            <div class="flex-row space-between">
+                <button id="back-to-chat-from-settings" class="md-button-outline md-button"><i class="fas fa-arrow-left"></i> Назад</button>
+                <h3>Настройки</h3>
+                <div></div>
+            </div>
+            <button id="export-key-btn" class="md-button w-100 mt-3"><i class="fas fa-file-export"></i> Экспортировать ключ</button>
+            <button id="logout-btn" class="md-button-outline md-button w-100 mt-3" style="color:#ff7a7a;"><i class="fas fa-sign-out-alt"></i> Выйти из аккаунта</button>
+            <button id="permanent-logout-btn" class="md-button-outline md-button w-100 mt-3" style="color:#ff4444;"><i class="fas fa-trash-alt"></i> Выйти с устройства (удалить ключ)</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ---------- Глобальные переменные ----------
+    let ws = null;
+    let token = null;
+    let nickname = null;
+    let privateKeyPem = null;
+    let currentChatId = null;
+    let chatsList = [];
+    let messagesInterval = null;
+    let chatsInterval = null;
+    let pendingMessages = [];
+
+    const FERNET_KEY_B64 = "b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=";
+    const WS_URL = "ws://130.12.45.26:8765";
+
+    // ---------- WebSocket ----------
+    async function wsSend(payload) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            console.error("WebSocket не подключён");
+            return false;
+        }
+        try {
+            const encryptedBase64 = await Fernet.encrypt(JSON.stringify(payload), FERNET_KEY_B64);
+            ws.send(encryptedBase64);
+            return true;
+        } catch (e) {
+            console.error("Ошибка шифрования/отправки:", e);
+            return false;
+        }
+    }
+
+    function connectWebSocket() {
+        ws = new WebSocket(WS_URL);
+        ws.onopen = () => console.log("WebSocket connected");
+        ws.onmessage = async (event) => {
+            try {
+                const decrypted = await Fernet.decrypt(event.data, FERNET_KEY_B64);
+                const data = JSON.parse(decrypted);
+                handleServerMessage(data);
+            } catch (e) {
+                console.error("Ошибка дешифрования:", e);
+            }
+        };
+        ws.onerror = (err) => console.error("WS error", err);
+        ws.onclose = () => {
+            console.log("WS closed, reconnect in 3s");
+            setTimeout(connectWebSocket, 3000);
+        };
+    }
+
+    // ---------- Обработка сообщений сервера ----------
+    async function handleServerMessage(data) {
+        const action = data.action;
+        if (action === "register") {
+            if (data.status === "OK") {
+                token = data.token;
+                localStorage.setItem("token", token);
+                showScreen("code-screen");
+            } else showError(data.message, true);
+        } else if (action === "register_verification") {
+            if (data.status === "OK") {
+                await autoLoginAfterReg();
+            } else showError(data.message, false, "code-error");
+        } else if (action === "login") {
+            if (data.status === "OK") {
+                token = data.token;
+                localStorage.setItem("token", token);
+                if (await hasPrivateKey(token)) autoLogin();
+                else showScreen("import-screen");
+            } else showError(data.message, false, "login-error");
+        } else if (action === "get_name") {
+            if (data.status === "OK") {
+                nickname = data.name;
+                localStorage.setItem("nickname", nickname);
+                startChatScreen();
+            }
+        } else if (action === "get_chats" && data.status === "OK") {
+            chatsList = data.chats || [];
+            renderChats();
+        } else if (action === "create_chat_with_user" || action === "create_group") {
+            if (data.status === "OK") {
+                showScreen("chat-screen");
+            } else {
+                const isPersonal = (action === "create_chat_with_user");
+                showError(data.message, isPersonal, isPersonal ? "personal-error" : "group-error");
+            }
+        } else if (action === "get_messages" && data.status === "OK") {
+            await processMessages(data.chat_id, data.data);
+        } else if (action === "get_members_keys" && data.status === "OK") {
+            await sendEncryptedMessagesToMembers(data.chat_id, data.content);
+        }
+    }
+
+    async function processMessages(chatId, messagesArray) {
+        if (chatId !== currentChatId) return;
+        for (let msg of messagesArray) {
+            let decrypted = "[ошибка]";
+            try {
+                decrypted = await decryptWithPrivateKey(msg.message);
+            } catch (e) { console.error(e); }
+            appendMessage(msg.from, decrypted, msg.from === nickname);
+        }
+    }
+
+    async function decryptWithPrivateKey(encryptedBase64) {
+        if (!privateKeyPem) return "[Нет ключа]";
+        const pem = privateKeyPem;
+        const b64 = pem.replace(/-----\w+ PRIVATE KEY-----/g, "").replace(/\s/g, "");
+        const binaryKey = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+        const key = await crypto.subtle.importKey("pkcs8", binaryKey, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["decrypt"]);
+        const encryptedData = Uint8Array.from(atob(encryptedBase64), c=>c.charCodeAt(0));
+        const decrypted = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, key, encryptedData);
+        return new TextDecoder().decode(decrypted);
+    }
+
+    async function encryptWithPublicKey(plaintext, publicKeyPem) {
+        const pemHeader = "-----BEGIN PUBLIC KEY-----";
+        const pemFooter = "-----END PUBLIC KEY-----";
+        const pemContent = publicKeyPem.replace(pemHeader, "").replace(pemFooter, "").replace(/\s/g, "");
+        const binaryKey = Uint8Array.from(atob(pemContent), c=>c.charCodeAt(0));
+        const key = await crypto.subtle.importKey("spki", binaryKey, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
+        const encrypted = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, key, new TextEncoder().encode(plaintext));
+        return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+    }
+
+    async function sendEncryptedMessagesToMembers(chatId, membersKeys) {
+        const pending = pendingMessages.filter(p => p.chatId === chatId);
+        for (let p of pending) {
+            for (let member of membersKeys) {
+                const [username, pubKey] = Object.entries(member)[0];
+                const encrypted = await encryptWithPublicKey(p.messageText, pubKey);
+                await wsSend({ action: "send_message", token, to_username: username, message: encrypted, chat_id: chatId });
+            }
+        }
+        pendingMessages = pendingMessages.filter(p => p.chatId !== chatId);
+    }
+
+    // ---------- RSA ключи ----------
+    async function generateRSAKeyPair() {
+        const keyPair = await crypto.subtle.generateKey(
+            { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+            true, ["encrypt", "decrypt"]
+        );
+        const privExported = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+        const pubExported = await crypto.subtle.exportKey("spki", keyPair.publicKey);
+        const privPem = arrayBufferToPem(privExported, "PRIVATE KEY");
+        const pubPem = arrayBufferToPem(pubExported, "PUBLIC KEY");
+        return { privatePem: privPem, publicPem: pubPem };
+    }
+
+    function arrayBufferToPem(buffer, type) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const b64 = btoa(binary);
+        const lines = b64.match(/.{1,64}/g).join('\n');
+        return `-----BEGIN ${type}-----\n${lines}\n-----END ${type}-----\n`;
+    }
+
+    async function hasPrivateKey(token) {
+        const stored = localStorage.getItem(`priv_${token}`);
+        if (stored) {
+            privateKeyPem = stored;
+            return true;
+        }
+        return false;
+    }
+
+    // ---------- UI ----------
+    function showScreen(id) {
+        document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+        document.getElementById(id).classList.add("active");
+    }
+
+    function showError(msg, isReg, errorDivId = null) {
+        if (errorDivId) document.getElementById(errorDivId).innerText = msg || "";
+        else if (isReg) document.getElementById("reg-error").innerText = msg || "";
+        else document.getElementById("login-error").innerText = msg || "";
+    }
+
+    document.getElementById("login-btn").onclick = () => {
+        const email = document.getElementById("login-email").value;
+        const pwd = document.getElementById("login-password").value;
+        if (!email || !pwd) return showError("Заполните поля", false);
+        wsSend({ action: "login", email, password: CryptoJS.SHA256(pwd).toString() });
+    };
+    document.getElementById("reg-btn").onclick = async () => {
+        const nick = document.getElementById("reg-nick").value;
+        const email = document.getElementById("reg-email").value;
+        const pwd = document.getElementById("reg-password").value;
+        if (!nick || !email || !pwd) return showError("Заполните поля", true);
+        if (pwd.length < 8) return showError("Пароль не менее 8 символов", true);
+        wsSend({ action: "register", nickname: nick, email, password: CryptoJS.SHA256(pwd).toString() });
+    };
+
+    let publicKeyForReg = null;
+    async function autoLoginAfterReg() {
+        const { privatePem, publicPem } = await generateRSAKeyPair();
+        privateKeyPem = privatePem;
+        publicKeyForReg = publicPem;
+        localStorage.setItem(`priv_${token}`, privatePem);
+        const code = parseInt(document.getElementById("code-input").value);
+        if (isNaN(code) || code.toString().length !== 6) return showError("Неверный код", false, "code-error");
+        wsSend({ action: "register_verification", token, code, key: publicPem });
+    }
+
+    document.getElementById("verify-btn").onclick = () => {
+        const code = parseInt(document.getElementById("code-input").value);
+        if (isNaN(code) || code.toString().length !== 6) return showError("Неверный код", false, "code-error");
+        wsSend({ action: "register_verification", token, code, key: publicKeyForReg });
+    };
+
+    async function autoLogin() {
+        const storedPriv = localStorage.getItem(`priv_${token}`);
+        if (storedPriv) privateKeyPem = storedPriv;
+        wsSend({ action: "get_name", token });
+    }
+
+    function startChatScreen() {
+        if (chatsInterval) clearInterval(chatsInterval);
+        chatsInterval = setInterval(() => wsSend({ action: "get_chats", token }), 5000);
+        wsSend({ action: "get_chats", token });
+        showScreen("chat-screen");
+    }
+
+    function renderChats() {
+        const container = document.getElementById("chats-list");
+        container.innerHTML = "";
+        for (let chat of chatsList) {
+            const div = document.createElement("div");
+            div.className = "chat-item";
+            div.innerHTML = `<div class="chat-avatar">${chat.name.charAt(0).toUpperCase()}</div><div class="chat-name">${escapeHtml(chat.name)}</div>`;
+            div.onclick = () => openChat(chat.id);
+            container.appendChild(div);
+        }
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    async function openChat(chatId) {
+        currentChatId = chatId;
+        document.getElementById("messages-scroll").innerHTML = "";
+        if (messagesInterval) clearInterval(messagesInterval);
+        messagesInterval = setInterval(() => {
+            if (currentChatId) wsSend({ action: "get_messages", token, chat_id: currentChatId });
+        }, 3000);
+        wsSend({ action: "get_messages", token, chat_id: chatId });
+    }
+
+    function appendMessage(sender, text, isOwn) {
+        const container = document.getElementById("messages-scroll");
+        const msgDiv = document.createElement("div");
+        msgDiv.className = `message ${isOwn ? "message-own" : "message-other"}`;
+        msgDiv.innerHTML = `<div class="message-name">${escapeHtml(sender)}</div><div>${escapeHtml(text)}</div>`;
+        container.appendChild(msgDiv);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    document.getElementById("send-message-btn").onclick = async () => {
+        const msg = document.getElementById("message-input").value.trim();
+        if (!msg || !currentChatId) return;
+        pendingMessages.push({ chatId: currentChatId, messageText: msg });
+        wsSend({ action: "get_members_keys", token, chat_id: currentChatId });
+        document.getElementById("message-input").value = "";
+    };
+
+    document.getElementById("create-personal-btn").onclick = () => {
+        const username = document.getElementById("personal-username").value;
+        if (!username) return;
+        wsSend({ action: "create_chat_with_user", token, username });
+    };
+    document.getElementById("create-group-btn").onclick = () => {
+        const name = document.getElementById("group-name").value;
+        const members = document.getElementById("group-members").value.split(",").map(s => s.trim());
+        if (!name || members.length === 0) return;
+        wsSend({ action: "create_group", token, name, usernames: members });
+    };
+
+    document.getElementById("export-key-btn").onclick = () => {
+        if (!privateKeyPem || !token) return;
+        const content = token + "\n" + privateKeyPem;
+        const blob = new Blob([content], { type: "text/plain" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `key_${token}.key`;
+        a.click();
+    };
+    document.getElementById("logout-btn").onclick = () => logout(false);
+    document.getElementById("permanent-logout-btn").onclick = () => logout(true);
+    document.getElementById("logout-after-import").onclick = () => logout(false);
+
+    function logout(deleteKey) {
+        if (deleteKey && token) localStorage.removeItem(`priv_${token}`);
+        localStorage.removeItem("token");
+        localStorage.removeItem("nickname");
+        token = null; nickname = null; privateKeyPem = null;
+        if (messagesInterval) clearInterval(messagesInterval);
+        if (chatsInterval) clearInterval(chatsInterval);
+        showScreen("auth-screen");
+    }
+
+    document.getElementById("import-submit").onclick = async () => {
+        const file = document.getElementById("import-file").files[0];
+        if (!file) return;
+        const text = await file.text();
+        const lines = text.split("\n");
+        const fileToken = lines[0].trim();
+        const keyPem = lines.slice(1).join("\n");
+        if (fileToken !== token) {
+            document.getElementById("import-error").innerText = "Неверный файл (токен не совпадает)";
+            return;
+        }
+        localStorage.setItem(`priv_${token}`, keyPem);
+        privateKeyPem = keyPem;
+        autoLogin();
+    };
+
+    // Tabs
+    document.querySelectorAll("#auth-tabs .tab").forEach(tab => {
+        tab.onclick = () => {
+            const isLogin = tab.dataset.tab === "login";
+            document.getElementById("login-panel").style.display = isLogin ? "block" : "none";
+            document.getElementById("register-panel").style.display = isLogin ? "none" : "block";
+            document.querySelectorAll("#auth-tabs .tab").forEach(t => t.classList.remove("active"));
+            tab.classList.add("active");
+        };
+    });
+    document.querySelectorAll("#add-tabs .tab").forEach(tab => {
+        tab.onclick = () => {
+            const isPersonal = tab.dataset.addtab === "personal";
+            document.getElementById("personal-panel").style.display = isPersonal ? "block" : "none";
+            document.getElementById("group-panel").style.display = isPersonal ? "none" : "block";
+            document.querySelectorAll("#add-tabs .tab").forEach(t => t.classList.remove("active"));
+            tab.classList.add("active");
+        };
+    });
+
+    document.getElementById("settings-btn").onclick = () => showScreen("settings-screen");
+    document.getElementById("add-chat-btn").onclick = () => showScreen("add-chat-screen");
+    document.getElementById("back-to-chat-from-add").onclick = () => showScreen("chat-screen");
+    document.getElementById("back-to-chat-from-settings").onclick = () => showScreen("chat-screen");
+    document.getElementById("back-to-auth").onclick = () => showScreen("auth-screen");
+
+    // Инициализация
+    window.onload = () => {
+        connectWebSocket();
+        const savedToken = localStorage.getItem("token");
+        if (savedToken) {
+            token = savedToken;
+            if (localStorage.getItem(`priv_${token}`)) autoLogin();
+            else showScreen("import-screen");
+        } else {
+            showScreen("auth-screen");
+        }
+    };
+</script>
+</body>
+</html>

@@ -1587,8 +1587,19 @@ class ChatApp(MDApp):
 
     def connect_websocket(self):
         def on_message(ws, message):
-            data = json.loads(FERNET_KEY.decrypt(message).decode('utf-8'))
-            action = data.get('action')
+            try:
+                print("Received raw message length:", len(message))
+                decrypted = FERNET_KEY.decrypt(message)
+                print("Decrypted bytes length:", len(decrypted))
+                decoded = decrypted.decode('utf-8')
+                print("Decoded string:", repr(decoded[:100]))
+                data = json.loads(decoded)
+                # ... остальная обработка
+            except Exception as e:
+                print("Error in on_message:", e)
+                print("Raw message (first 100 bytes):", message[:100])
+                data = json.loads(FERNET_KEY.decrypt(message).decode('utf-8'))
+                action = data.get('action')
 
             if action == 'register':
                 if data['status'] == 'OK' and self.token is None:

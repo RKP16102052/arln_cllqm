@@ -19,7 +19,7 @@ from data import db_session
 from cryptography.fernet import Fernet
 
 
-HOST = '127.0.0.1' # Был "130.12.45.26" 
+HOST = "130.12.45.26" # Был "130.12.45.26" 
 PORT = 8765 
 EMAIL = 'arlenemessengerg@gmail.com'
 EMAIL_PASS = 'pzzo urrd hjej arpw'
@@ -112,6 +112,79 @@ def reg_verification(data: dict):
         session.close()
 
     return {"action": "register", "status": "OK", "token": token, "message": "Отправка кода подтверждения."}
+
+
+def reset_password_request(data: dict):
+    email = data.get('email', None)
+    if not email or not validators.email(email):
+        return {"action": "reset_password_request", "status": "error", "message": "Неверный email"}
+
+    session = db_session.create_session()
+    user = session.query(User).filter(User.email == email).first()
+    if not user:
+        session.close()
+        return {"action": "reset_password_request", "status": "error", "message": "Пользователь с таким email не найден"}
+
+    # Генерация 6-значного кода и 12-символьного токена
+    code = random.randint(100000, 999999)
+    token_12 = ''.join(random.choices('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=12))
+    die_time = int(time.time()) + 600
+
+    # Сохраняем в БД (можно отдельная таблица ResetRequest)
+    # Для простоты можно хранить прямо в таблице пользователя или в TempUser
+    # Здесь предполагаем, что есть таблица PasswordResetRequest с полями email, code, token, die_time
+    # Создайте такую таблицу в models.py, либо используйте TempUser с дополнительными полями
+
+    # Отправка email
+    message = MIMEMultipart()
+    message["From"] = EMAIL
+    message["To"] = email
+    message["Subject"] = "Восстановление пароля"
+    body = f'Ваш код восстановления: {code}\nВаш 12-символьный токен: {token_12}\nКод действителен 10 минут.'
+    message.attach(MIMEText(body, "plain"))
+
+    send_email(message)
+
+    # Временное сохранение (например, в redis или в БД)
+    # Здесь для примера используем словарь в памяти (не подходит для продакшена)
+    # Лучше создать таблицу в БД
+    reset_requests[email] = {"code": code, "token": token_12, "die_time": die_time}
+
+    session.close()
+    return {"action": "reset_password_request", "status": "OK", "message": "Код и токен отправлены"}
+
+
+def reset_password_verify(data: dict):
+    email = data.get('email')
+    code = data.get('code')
+    token_12 = data.get('token')
+    # Проверка по временному хранилищу
+    request = reset_requests.get(email)
+    if not request or request['code'] != code or request['token'] != token_12 or time.time() > request['die_time']:
+        return {"action": "reset_password_verify", "status": "error", "message": "Неверный код или токен"}
+    return {"action": "reset_password_verify", "status": "OK", "message": "Проверка пройдена"}
+
+
+def reset_password_confirm(data: dict):
+    email = data.get('email')
+    username = data.get('username')
+    new_password = data.get('new_password')
+
+    session = db_session.create_session()
+    user = session.query(User).filter(User.email == email).first()
+    if not user or user.name != username:
+        session.close()
+        return {"action": "reset_password_confirm", "status": "error", "message": "Ошибка: указано неверное имя пользователя"}
+
+    user.hashed_password = new_password
+    session.commit()
+    session.close()
+
+    # Удаляем временные данные
+    if email in reset_requests:
+        del reset_requests[email]
+
+    return {"action": "reset_password_confirm", "status": "OK", "message": "Пароль успешно изменён"}
 
 
 def fin_reg(data: dict):
@@ -828,6 +901,12 @@ async def handler(websocket):
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(fin_reg(data)).encode()))
             elif action == 'login':
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(login(data)).encode()))
+            elif action == 'reset_password_request':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(reset_password_request(data)).encode()))
+            elif action == 'reset_password_verify':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(reset_password_verify(data)).encode()))
+            elif action == 'reset_password_confirm':
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(reset_password_confirm(data)).encode()))
             elif action == 'create_chat_with_user':
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(create_chat_with_user(data)).encode()))
             elif action == 'get_public_key':
