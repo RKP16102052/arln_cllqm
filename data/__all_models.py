@@ -7,13 +7,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 
 
-class PasswordReset(Base):
+class PasswordReset(SqlAlchemyBase):
     __tablename__ = 'password_resets'
-    id = Column(Integer, primary_key=True)
-    email = Column(String, nullable=False)
-    code = Column(Integer, nullable=False)
-    token = Column(String, nullable=False)
-    die_time = Column(Integer, nullable=False)
+    id = sqlalchemy.Column(Integer, primary_key=True)
+    email = sqlalchemy.Column(String, nullable=False)
+    code = sqlalchemy.Column(Integer, nullable=False)
+    token = sqlalchemy.Column(String, nullable=False)
+    die_time = sqlalchemy.Column(Integer, nullable=False)
 
 
 class User(SqlAlchemyBase, UserMixin, SerializerMixin):
