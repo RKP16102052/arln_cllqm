@@ -823,42 +823,42 @@ async def handler(websocket):
             action = data.get('action', None)
 
             if action == 'register':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(reg_verification(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(reg_verification(data)).encode()))
             elif action == 'register_verification':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(fin_reg(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(fin_reg(data)).encode()))
             elif action == 'login':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(login(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(login(data)).encode()))
             elif action == 'create_chat_with_user':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(create_chat_with_user(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(create_chat_with_user(data)).encode()))
             elif action == 'get_public_key':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_public_key(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_public_key(data)).encode()))
             elif action == 'send_message':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(send_message(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(send_message(data)).encode()))
             elif action == 'get_messages':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_messages(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_messages(data)).encode()))
             elif action == 'get_name':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_name(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_name(data)).encode()))
             elif action == 'get_chats':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_chats(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_chats(data)).encode()))
             elif action == 'get_members_keys':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_members_keys(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_members_keys(data)).encode()))
             elif action == 'create_group':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(create_group(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(create_group(data)).encode()))
             elif action == 'upload_avatar':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_avatar(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_avatar(data)).encode()))
             elif action == 'download_avatar':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_avatar(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_avatar(data)).encode()))
             elif action == 'download_chat_image':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_chat_image(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_chat_image(data)).encode()))
             elif action == 'upload_file':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_file(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_file(data)).encode()))
             elif action == 'download_file':
                 for i in download_file(data):
-                    await websocket.send(FERNET_KEY.encrypt(json.dumps(i, ensure_ascii=False).encode()))
+                    await websocket.send(FERNET_KEY.encrypt(json.dumps(i).encode()))
             elif action == 'send_file':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(send_file(data), ensure_ascii=False).encode()))
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(send_file(data)).encode()))
             else:
-                await websocket.send(json.dumps({"status": "error", "message": "Неизвестное действие"}, ensure_ascii=False))
+                await websocket.send(json.dumps({"status": "error", "message": "Неизвестное действие"}))
     except websockets.exceptions.ConnectionClosed:
         pass
     finally:
