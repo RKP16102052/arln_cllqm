@@ -36,7 +36,7 @@ import uuid
 import shutil
 
 
-HOST = '130.12.45.26'
+HOST = "127.0.0.1"  # Был "130.12.45.26"
 PORT = 8765
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
 
@@ -103,7 +103,7 @@ class ChatItem(MDBoxLayout, MDFlatButton):
         if os.path.exists(os.path.join(CHATS_IMAGES_DIR, str(self.chat_id))):
             self.image.source = os.path.join(CHATS_IMAGES_DIR, str(self.chat_id))
         else:
-            self.image.source = './assets/icon.png'
+            self.image.source = 'default.png'
 
         image_container.add_widget(self.image)
 
@@ -293,7 +293,6 @@ class AuthScreen(MDScreen):
 
         login_scroll.add_widget(login_box)
         login_tab.add_widget(login_scroll)
-        
 
         # --- Register Tab ---
         reg_tab = AuthTab(title="Регистрация")
@@ -341,10 +340,8 @@ class AuthScreen(MDScreen):
         # Нижняя часть (кнопки)
         button_box = MDBoxLayout(orientation="horizontal", size_hint_y=None, height="56dp", spacing=10)
         self.reg_login_btn = MDRaisedButton(text="Войти", on_release=lambda *_: self.login_or_reg(), font_size=20)
-        forgot_btn = MDFlatButton(text="Забыли пароль?", on_release=self.go_to_reset_password, size_hint_y=None, height="40dp")
         button_box.add_widget(self.reg_login_btn)
         root.add_widget(button_box)
-        root.add_widget(forgot_btn)
 
         self.add_widget(root)
 
@@ -425,9 +422,6 @@ class AuthScreen(MDScreen):
 
     def send_to_websocket(self, payload):
         return self.app.send_to_websocket(payload)
-
-    def go_to_reset_password(self, *args):
-        self.app.sm.current = 'reset_password'
 
     def got_token_reg(self, token):
         with open(TOKEN_FILE, 'w') as file:
@@ -674,7 +668,7 @@ class ChatScreen(MDScreen):
 
                 Clock.schedule_once(lambda dt: self.show_messages(data))
             except Exception:
-                self.show_messages([])
+                Clock.schedule_once(lambda dt: self.show_messages([]))
 
     def show_messages(self, data):
         if self.phone_mode:
@@ -1368,168 +1362,6 @@ class ImportKeyScreen(MDScreen):
             self.error_label.text = ''
 
 
-class ResetPasswordScreen(MDScreen):
-    def on_pre_enter(self):
-        self.clear_widgets()
-
-        root = MDBoxLayout(orientation='vertical', padding=20, spacing=15)
-
-        # Шаг 1: ввод email
-        self.email_input = MDTextField(hint_text="Электронная почта", size_hint_y=None, height="48dp")
-        self.send_code_btn = MDRaisedButton(text="Отправить код восстановления", size_hint_y=None, height="48dp")
-        self.send_code_btn.on_release = self.request_reset_code
-
-        # Шаг 2: ввод кода и токена (появляются после отправки)
-        self.code_input = MDTextField(hint_text="Код из письма", size_hint_y=None, height="48dp")
-        self.token_input = MDTextField(hint_text="12-символьный токен", size_hint_y=None, height="48dp")
-        self.verify_btn = MDRaisedButton(text="Проверить", size_hint_y=None, height="48dp")
-        self.verify_btn.on_release = self.verify_code_and_token
-
-        # Шаг 3: ввод имени и нового пароля (появляются после проверки)
-        self.username_input = MDTextField(hint_text="Имя пользователя (при регистрации)", size_hint_y=None, height="48dp")
-        self.new_password = MDTextField(hint_text="Новый пароль", password=True, size_hint_y=None, height="48dp")
-        self.confirm_password = MDTextField(hint_text="Повторите пароль", password=True, size_hint_y=None, height="48dp")
-        self.reset_btn = MDRaisedButton(text="Сбросить пароль", size_hint_y=None, height="48dp")
-        self.reset_btn.on_release = self.reset_password
-
-        # Контейнеры для динамического отображения
-        self.step2_box = MDBoxLayout(orientation='vertical', spacing=10, size_hint_y=None, height=0)
-        self.step3_box = MDBoxLayout(orientation='vertical', spacing=10, size_hint_y=None, height=0)
-
-        # Кнопка назад
-        back_button = MDIconButton(icon='arrow-left', md_bg_color='#751fff', size_hint_y=None, height="48dp")
-        back_button.on_release = self.back_to_auth
-
-        header_box = MDBoxLayout(orientation='horizontal', size_hint_y=None, height="56dp")
-        header_box.add_widget(back_button)
-        header_box.add_widget(MDLabel(text="Сброс пароля", font_style="H6", halign="center"))
-
-        self.error_label = MDLabel(text="", color="red", halign="center", size_hint_y=None, height="40dp")
-
-        root.add_widget(header_box)
-        root.add_widget(self.email_input)
-        root.add_widget(self.send_code_btn)
-        root.add_widget(self.step2_box)
-        root.add_widget(self.step3_box)
-        root.add_widget(self.error_label)
-        root.add_widget(MDBoxLayout())  # растяжка
-
-        self.add_widget(root)
-
-        # Изначально скрываем шаги 2 и 3
-        self.step2_box.height = 0
-        self.step3_box.height = 0
-        self.step2_box.opacity = 0
-        self.step3_box.opacity = 0
-        self.temp_token = None  # временный токен от сервера (если нужно)
-
-    def set_app(self, app):
-        self.app = app
-
-    def back_to_auth(self, *args):
-        self.app.sm.current = 'auth'
-
-    def request_reset_code(self, *args):
-        email = self.email_input.text.strip()
-        if not email:
-            self.show_error("Введите email")
-            return
-        if not validators.email(email):
-            self.show_error("Неверный формат email")
-            return
-
-        data = {
-            "action": "reset_password_request",
-            "email": email
-        }
-        self.app.send_to_websocket(data)
-        self.show_error("Запрос отправлен, ожидайте ответа...", is_error=False)
-
-    def verify_code_and_token(self, *args):
-        code = self.code_input.text.strip()
-        token_12 = self.token_input.text.strip()
-        if not code or not token_12:
-            self.show_error("Введите код и 12-символьный токен")
-            return
-        if len(code) != 6 or not code.isdigit():
-            self.show_error("Код должен состоять из 6 цифр")
-            return
-        if len(token_12) != 12 or not token_12.isalnum():
-            self.show_error("Токен должен содержать 12 букв и цифр")
-            return
-
-        data = {
-            "action": "reset_password_verify",
-            "email": self.email_input.text.strip(),
-            "code": int(code),
-            "token": token_12
-        }
-        self.app.send_to_websocket(data)
-
-    def reset_password(self, *args):
-        username = self.username_input.text.strip()
-        new_pass = self.new_password.text
-        confirm = self.confirm_password.text
-        if not username or not new_pass or not confirm:
-            self.show_error("Заполните все поля")
-            return
-        if new_pass != confirm:
-            self.show_error("Пароли не совпадают")
-            return
-        if len(new_pass) < 8:
-            self.show_error("Пароль должен быть не менее 8 символов")
-            return
-
-        data = {
-            "action": "reset_password_confirm",
-            "email": self.email_input.text.strip(),
-            "username": username,
-            "new_password": self.app.auth_screen.hash_password(new_pass)
-        }
-        self.app.send_to_websocket(data)
-
-    def show_error(self, text, is_error=True):
-        if is_error:
-            self.error_label.text = f"[color=ff0000]{text}[/color]"
-        else:
-            self.error_label.text = f"[color=00ff00]{text}[/color]"
-        self.error_label.markup = True
-
-    def on_ws_message(self, data):
-        action = data.get('action')
-        if action == 'reset_password_request':
-            if data.get('status') == 'OK':
-                self.show_error("Код и токен отправлены на почту", is_error=False)
-                # Показываем шаг 2
-                self.step2_box.height = 150
-                self.step2_box.opacity = 1
-                self.step2_box.clear_widgets()
-                self.step2_box.add_widget(self.code_input)
-                self.step2_box.add_widget(self.token_input)
-                self.step2_box.add_widget(self.verify_btn)
-            else:
-                self.show_error(data.get('message', 'Ошибка при отправке'))
-        elif action == 'reset_password_verify':
-            if data.get('status') == 'OK':
-                self.show_error("Проверка пройдена. Введите имя и новый пароль.", is_error=False)
-                # Показываем шаг 3
-                self.step3_box.height = 200
-                self.step3_box.opacity = 1
-                self.step3_box.clear_widgets()
-                self.step3_box.add_widget(self.username_input)
-                self.step3_box.add_widget(self.new_password)
-                self.step3_box.add_widget(self.confirm_password)
-                self.step3_box.add_widget(self.reset_btn)
-            else:
-                self.show_error(data.get('message', 'Неверный код или токен'))
-        elif action == 'reset_password_confirm':
-            if data.get('status') == 'OK':
-                self.show_error("Пароль успешно изменён. Теперь вы можете войти.", is_error=False)
-                Clock.schedule_once(lambda dt: self.back_to_auth(), 2)
-            else:
-                self.show_error(data.get('message', 'Ошибка сброса пароля'))
-
-
 class ScreenManager(MDScreenManager):
     pass
 
@@ -1539,8 +1371,6 @@ class ChatApp(MDApp):
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Purple"
         self.theme_cls.primary_hue = '800'
-        self.title = "Colloquium"
-        self.icon = "./assets/icon.ico"
 
         self.nickname = None
         self.token = None
@@ -1569,11 +1399,7 @@ class ChatApp(MDApp):
         self.settings_screen = SettingsScreen(name='settings')
         self.settings_screen.set_app(self)
 
-        self.reset_password_screen = ResetPasswordScreen(name='reset_password')
-        self.reset_password_screen.set_app(self)
-
         self.sm.add_widget(self.auth_screen)
-        self.sm.add_widget(self.reset_password_screen)
         self.sm.add_widget(self.code_screen)
         self.sm.add_widget(self.chat_screen)
         self.sm.add_widget(self.add_chat_screen)
@@ -1589,19 +1415,8 @@ class ChatApp(MDApp):
 
     def connect_websocket(self):
         def on_message(ws, message):
-            try:
-                print("Received raw message length:", len(message))
-                decrypted = FERNET_KEY.decrypt(message)
-                print("Decrypted bytes length:", len(decrypted))
-                decoded = decrypted.decode('utf-8')
-                print("Decoded string:", repr(decoded[:100]))
-                data = json.loads(decoded)
-                # ... остальная обработка
-            except Exception as e:
-                print("Error in on_message:", e)
-                print("Raw message (first 100 bytes):", message[:100])
-                data = json.loads(FERNET_KEY.decrypt(message).decode('utf-8'))
-                action = data.get('action')
+            data = json.loads(FERNET_KEY.decrypt(message).decode())
+            action = data.get('action')
 
             if action == 'register':
                 if data['status'] == 'OK' and self.token is None:
@@ -1640,9 +1455,6 @@ class ChatApp(MDApp):
                         self.auto_login()
                 else:
                     self.auth_screen.show_error(data['message'], False)
-            elif action in ('reset_password_request', 'reset_password_verify', 'reset_password_confirm'):
-                if hasattr(self, 'reset_password_screen'):
-                    self.reset_password_screen.on_ws_message(data)
             elif action == 'get_chats' and data['status'] == 'OK':
                 with open(CHATS_FILE, 'w') as file:
                     json.dump(data['chats'], file)
@@ -1755,7 +1567,6 @@ class ChatApp(MDApp):
                                     fin += now
 
                                 fin = base64.encodebytes(fin)
-                                print(len(fin))
 
                                 or_message = bytes(name, encoding='UTF-8')
                             
@@ -2052,6 +1863,10 @@ class ChatApp(MDApp):
             shutil.rmtree(FILES_DIR)
         except Exception:
             pass
+
+        os.mkdir(CHATS_DIR)
+        os.mkdir(CHATS_IMAGES_DIR)
+        os.mkdir(FILES_DIR)
 
         self.sm.current = 'auth'
 
