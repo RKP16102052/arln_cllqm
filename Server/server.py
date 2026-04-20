@@ -19,8 +19,8 @@ from data import db_session
 from cryptography.fernet import Fernet
 
 
-HOST = '127.0.0.1' # Был "130.12.45.26" 
-PORT = 8765 
+HOST = '127.0.0.1' # Был "130.12.45.26"
+PORT = 8765
 EMAIL = 'arlenemessengerg@gmail.com'
 EMAIL_PASS = 'pzzo urrd hjej arpw'
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
@@ -35,6 +35,8 @@ GROUP_IMAGES_LOCATION = os.path.join(CHATS_LOCATION, 'group_images')
 os.makedirs(GROUP_IMAGES_LOCATION, exist_ok=True)
 FILES_DIR = os.path.join(CHATS_LOCATION, 'files')
 os.makedirs(FILES_DIR, exist_ok=True)
+os.makedirs('db', exist_ok=True)
+
 FILES_END_FILE = 'files.json'
 
 connected_clients = set()
@@ -153,10 +155,10 @@ def fin_reg(data: dict):
 def login(data: dict):
     email = data.get('email', None)
     password = data.get('password', None)
-    
+
     if email is None or password is None:
         return {"action": "login", "status": "error", "message": "Неверный формат"}
-    
+
     session = db_session.create_session()
     user = session.query(User).filter(User.email == email).first()
 
@@ -645,7 +647,7 @@ def download_chat_image(data: dict):
         if user_s.time_image_updated is None:
             session.close()
             return {"action": "download_chat_image", "status": "OK", "message": "Изображение не обновилось"}
-        
+
         if last_time is not None:
             if user_s.time_image_updated <= last_time:
                 session.close()
@@ -732,7 +734,7 @@ def upload_file(data: dict):
     if to_username is not None:
         fin['to_username'] = to_username
 
-    return fin 
+    return fin
 
 
 def download_file(data: dict):
