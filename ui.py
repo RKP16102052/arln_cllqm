@@ -103,7 +103,7 @@ class ChatItem(MDBoxLayout, MDFlatButton):
         if os.path.exists(os.path.join(CHATS_IMAGES_DIR, str(self.chat_id))):
             self.image.source = os.path.join(CHATS_IMAGES_DIR, str(self.chat_id))
         else:
-            self.image.source = 'default.png'
+            self.image.source = './assets/icon.png'
 
         image_container.add_widget(self.image)
 
@@ -1539,6 +1539,8 @@ class ChatApp(MDApp):
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Purple"
         self.theme_cls.primary_hue = '800'
+        self.title = "Colloquium"
+        self.icon = "./assets/icon.ico"
 
         self.nickname = None
         self.token = None
@@ -1569,9 +1571,9 @@ class ChatApp(MDApp):
 
         self.reset_password_screen = ResetPasswordScreen(name='reset_password')
         self.reset_password_screen.set_app(self)
-        self.sm.add_widget(self.reset_password_screen)
 
         self.sm.add_widget(self.auth_screen)
+        self.sm.add_widget(self.reset_password_screen)
         self.sm.add_widget(self.code_screen)
         self.sm.add_widget(self.chat_screen)
         self.sm.add_widget(self.add_chat_screen)
