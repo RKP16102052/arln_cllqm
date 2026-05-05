@@ -1,5 +1,5 @@
 from kivy.config import Config
-Config.set('graphics', 'resizable', '0')
+#Config.set('graphics', 'resizable', '0')
 
 from kivymd.app import MDApp
 from kivymd.uix.screenmanager import MDScreenManager
@@ -22,6 +22,7 @@ import validators
 
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.backends import default_backend
 from cryptography.fernet import Fernet
 
 from PIL import Image as PILImage
@@ -36,7 +37,7 @@ import uuid
 import shutil
 
 
-HOST = "127.0.0.1"  # Был "130.12.45.26"
+HOST = "130.12.45.26"  # Был "130.12.45.26"
 PORT = 8765
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
 
@@ -45,12 +46,15 @@ WEBSOCKET_URL = f"ws://{HOST}:{PORT}"
 if platform == 'android':
     from jnius import autoclass
     from android.storage import primary_external_storage_path
+    from android.permissions import request_permissions, Permission
+    from androidstorage4kivy import SharedStorage, ShareSheet, Chooser
     
     PythonActivity = autoclass('org.kivy.android.PythonActivity')
     activity = PythonActivity.mActivity
     context = activity.getApplicationContext()
     
     LOCAL_DIR = context.getExternalFilesDir(None).getAbsolutePath()
+    Window.softinput_mode = "below_target"
 else:
     LOCAL_DIR = os.path.join(os.path.expanduser("~"), ".local")
     
@@ -76,7 +80,6 @@ AVATAR_TIME_LOCATION = os.path.join(ARLENE_DIR, 'avatar_time')
 IMAGES_TIME_FILE = os.path.join(ARLENE_DIR, 'images_time.json')
 
 
-
 class ChatItem(MDBoxLayout, MDFlatButton):
     def __init__(self, name, chat_id, image, chat_screen, **kwargs):
         super().__init__(orientation="horizontal", size_hint=(1, None), **kwargs)
@@ -84,18 +87,18 @@ class ChatItem(MDBoxLayout, MDFlatButton):
         self.chat_screen = chat_screen
 
         self.halign = 'left'
-        self.height = 70
+        self.height = Window.size[1] // 8 # 70
 
         self.line_color = 'gray'
         self.line_width = 2
 
         root = MDBoxLayout(orientation='horizontal')
 
-        image_container = MDBoxLayout(size_hint_x=0.001)
+        image_container = MDBoxLayout(size_hint_x=0.22)#size_hint_x=0.001)
         image_container.padding = (-100, 0, 0, 5)
 
         self.image = Image(source=image, size_hint=(None, None))
-        self.image.size = (50, 50)
+        self.image.size = ((Window.size[1] // 8) * 0.8, (Window.size[1] // 8) * 0.8) # 50 50
         self.image.allow_stretch = True
         self.image.keep_ratio = False
         self.image.center_x = -100
@@ -107,7 +110,7 @@ class ChatItem(MDBoxLayout, MDFlatButton):
 
         image_container.add_widget(self.image)
 
-        text_container = MDBoxLayout(size_hint_x=3)
+        text_container = MDBoxLayout()#size_hint_x=3)
         self.label = MDLabel(text=name, halign="left", valign="middle", size_hint=(1, None))
         text_container.padding = (0, 0, 0, -20)
         text_container.add_widget(self.label)
@@ -147,7 +150,7 @@ class MessageItem(MDBoxLayout):
 
         if content_type == 'text':
             self.name_label = MDLabel(text=name, valign="middle", padding=(10, 20, 10, 0))
-            self.name_label.font_size = 19
+            self.name_label.bold = True
             self.name_label.bind(texture_size=self.name_label.setter("size"))
             self.root.add_widget(self.name_label)
 
@@ -169,16 +172,17 @@ class MessageItem(MDBoxLayout):
             self.main_button.on_press = self.download_or_save_file
             self.root.add_widget(self.main_button)
 
-            main_container = MDBoxLayout(orientation="vertical", spacing=10)
-            self.main_button.add_widget(main_container)
+            self.main_container = MDBoxLayout(orientation="vertical", spacing=10)
+            self.main_container.size = self.main_button.size
+            self.main_button.add_widget(self.main_container)
 
             self.name_label = MDLabel(text=name, valign="middle", padding=(10, 20, 10, 0))
-            self.name_label.font_size = 19
+            self.name_label.bold = True
             self.name_label.bind(texture_size=self.name_label.setter("size"))
-            main_container.add_widget(self.name_label)
+            self.main_container.add_widget(self.name_label)
 
             file_container = MDBoxLayout(orientation="horizontal")
-            main_container.add_widget(file_container)
+            self.main_container.add_widget(file_container)
 
             icon = MDIcon(icon='file', padding=(10, 0, 0, 20))
             file_container.add_widget(icon)
@@ -194,20 +198,29 @@ class MessageItem(MDBoxLayout):
                 self.name_label.halign = 'right'
                 self.text_label.halign = 'right'
 
-
         self.add_widget(self.root)
 
         self.add_widget(space_container, not own_message)
 
         Clock.schedule_once(lambda dt: self.adjust_size())
 
-    def adjust_size(self):
-        self.height = self.name_label.texture_size[1] + self.text_label.texture_size[1] + 25
-        self.name_label.size_hint_y = self.name_label.texture_size[1] / self.height
+    def adjust_size(self, stage=1):
+        if self.content_type == 'text':
+            self.height = self.name_label.texture_size[1] + self.text_label.texture_size[1] + 25
+            self.name_label.size_hint_y = self.name_label.texture_size[1] / self.height
+        elif self.content_type == 'file':
+            if stage == 1:
+                self.width = self.root.width
+                self.main_button.width = self.width
+                self.main_container.width = self.width
+                Clock.schedule_once(lambda dt: self.adjust_size(2))
+            else:
+                self.height = self.name_label.texture_size[1] + self.text_label.texture_size[1] + 25
+                self.name_label.size_hint_y = self.name_label.texture_size[1] / self.height
 
-        if self.content_type == 'file':
-            self.main_button.size = self.root.size
-            self.height = self.main_button.height
+                self.root.height = self.height
+                self.main_button.height = self.height
+                self.main_container.height = self.height
 
     def download_or_save_file(self):
         if os.path.exists(os.path.join(FILES_DIR, self.file_name)):
@@ -224,16 +237,48 @@ class MessageItem(MDBoxLayout):
         self.app.send_to_websocket(data)
 
     def save_file(self):
-        file_name = filechooser.save_file(path=self.text_label.text)
+        if platform == 'android':
+            request_permissions([Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE, "android.permission.MANAGE_EXTERNAL_STORAGE", Permission.READ_MEDIA_IMAGES, Permission.READ_MEDIA_VIDEO, Permission.READ_MEDIA_AUDIO])
+            ss = SharedStorage()
 
-        if file_name is not None:
-            file_name = file_name[0]
+            file_name = os.path.join(LOCAL_DIR, self.text_label.text)
 
             with open(os.path.join(FILES_DIR, self.file_name), 'rb') as file:
                 data = file.read()
 
             with open(file_name, 'wb') as file:
                 file.write(data)
+
+            ss.copy_to_shared(file_name, "downloads")
+
+            self.dialog = MDDialog(
+                title="Скачивание файла",
+                text="Файл сохранён в " + file_name
+            )
+            self.dialog.open()
+        else:
+            file_name = filechooser.save_file(path=self.text_label.text)
+
+            if file_name is not None:
+                file_name = file_name[0]
+
+                with open(os.path.join(FILES_DIR, self.file_name), 'rb') as file:
+                    data = file.read()
+
+                with open(file_name, 'wb') as file:
+                    file.write(data)
+
+    def __eq__(self, value) -> bool:
+        if type(self) == type(value):
+            if self.content_type == value.content_type:
+                if self.content_type == 'text':
+                    if self.text_label.text == value.text_label.text and self.name_label.text == value.name_label.text:
+                        return True
+                else:
+                    if self.file_name == value.file_name and self.text_label.text == value.text_label.text and self.name_label.text == value.name_label.text:
+                        return True
+
+        return False
 
 
 class AuthTab(MDBoxLayout, MDTabsBase):
@@ -522,6 +567,7 @@ class CodeScreen(MDScreen):
         private_key = rsa.generate_private_key(
             public_exponent=65537,
             key_size=2048,
+            backend=default_backend()
         )
 
         public_key = private_key.public_key()
@@ -708,7 +754,7 @@ class ChatScreen(MDScreen):
     def send_message(self):
         message = self.message_text.text
 
-        if self.current_chat_id is not None:
+        if self.current_chat_id is not None and message:
             self.messages_query.append({self.current_chat_id: message})
 
             data = {
@@ -728,26 +774,57 @@ class ChatScreen(MDScreen):
         self.app.open_settings()
 
     def pin_file(self):
-        file = filechooser.open_file()
+        if platform == 'android':
+            request_permissions([Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE, "android.permission.MANAGE_EXTERNAL_STORAGE", Permission.READ_MEDIA_IMAGES, Permission.READ_MEDIA_VIDEO, Permission.READ_MEDIA_AUDIO])
 
-        if file is not None and self.current_chat_id is not None:
-            try:
-                file = file[0]
-                name = os.path.split(file)[1]
-                mark = uuid.uuid4().hex
-                chat_id = self.current_chat_id
+            chooser = Chooser(self.pin_file_android)
+            chooser.choose_content("*/*")
+        else:
+            file = filechooser.open_file()
 
-                self.app.send_files.append((file, name, chat_id, mark))
+            if file is not None and self.current_chat_id is not None:
+                try:
+                    file = file[0]
+                    name = os.path.split(file)[1]
+                    mark = uuid.uuid4().hex
+                    chat_id = self.current_chat_id
 
-                data = {
-                    "action": "get_members_keys",
-                    'token': self.app.token,
-                    "chat_id": chat_id
-                }
+                    self.app.send_files.append((file, name, chat_id, mark))
 
-                self.app.send_to_websocket(data)
-            except Exception as e:
-                print(e)
+                    data = {
+                        "action": "get_members_keys",
+                        'token': self.app.token,
+                        "chat_id": chat_id
+                    }
+
+                    self.app.send_to_websocket(data)
+                except Exception as e:
+                    print(e)
+
+    def pin_file_android(self, file):
+        if file:
+            file = file[0]
+            ss = SharedStorage()
+            file = ss.copy_from_shared(file)
+
+            if file is not None and self.app.chat_screen.current_chat_id is not None:
+                try:
+                    name = os.path.split(file)[1]
+                    mark = uuid.uuid4().hex
+                    chat_id = self.app.chat_screen.current_chat_id
+
+                    self.app.send_files.append((file, name, chat_id, mark))
+
+                    data = {
+                        "action": "get_members_keys",
+                        'token': self.app.token,
+                        "chat_id": chat_id
+                    }
+
+                    self.app.start_websocket()
+                    Clock.schedule_once(lambda dt: self.app.send_to_websocket(data), 2)
+                except Exception as e:
+                    print(e)
 
 
 class PhoneChatScreen(ChatScreen):
@@ -760,7 +837,7 @@ class PhoneChatScreen(ChatScreen):
 
         root = MDBoxLayout(orientation="vertical", padding=20, spacing=10)
 
-        split_box = MDBoxLayout(orientation="horizontal")
+        split_box = MDBoxLayout(orientation="horizontal", padding=(0, 60, 0, 0))
 
         chats_messages_box = MDBoxLayout(orientation="vertical", padding=20, spacing=30)
 
@@ -782,7 +859,7 @@ class PhoneChatScreen(ChatScreen):
 
         message_text_box = MDBoxLayout(orientation="horizontal", spacing=10)
 
-        self.message_text = MDTextField(multiline=True, font_size=20)
+        self.message_text = MDTextField(multiline=True)#, font_size=20)
         pin_button = MDIconButton(icon='pin')
         pin_button.on_release = self.pin_file
         send_button = MDIconButton(icon='send')
@@ -817,17 +894,24 @@ class PhoneChatScreen(ChatScreen):
             self.show_messages([])
 
     def show_messages(self, data):
-        self.chat_content.clear_widgets()
+        chat = self.chat_content.children[::-1]
+        current = []
 
         for i in data:
             own_message = self.app.nickname == i['from']
             f_data = i.get('file', None)
-            self.chat_content.add_widget(MessageItem(i['from'], i['message'], self.app, own_message, i['type'], f_data))
+            current.append(MessageItem(i['from'], i['message'], self.app, own_message, i['type'], f_data))
+
+        if chat != current:
+            self.chat_content.clear_widgets()
+
+            for i in current:
+                self.chat_content.add_widget(i)
 
     def send_message(self):
         message = self.message_text.text
 
-        if self.app.chat_screen.current_chat_id is not None:
+        if self.app.chat_screen.current_chat_id is not None and message:
             self.app.chat_screen.messages_query.append({self.app.chat_screen.current_chat_id: message})
 
             data = {
@@ -844,26 +928,57 @@ class PhoneChatScreen(ChatScreen):
             self.download_chat(self.app.chat_screen.current_chat_id)
 
     def pin_file(self):
-        file = filechooser.open_file()
+        if platform == 'android':
+            request_permissions([Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE, "android.permission.MANAGE_EXTERNAL_STORAGE", Permission.READ_MEDIA_IMAGES, Permission.READ_MEDIA_VIDEO, Permission.READ_MEDIA_AUDIO])
 
-        if file is not None and self.app.chat_screen.current_chat_id is not None:
-            try:
-                file = file[0]
-                name = os.path.split(file)[1]
-                mark = uuid.uuid4().hex
-                chat_id = self.app.chat_screen.current_chat_id
+            chooser = Chooser(self.pin_file_android)
+            chooser.choose_content("*/*")
+        else:
+            file = filechooser.open_file()
 
-                self.app.send_files.append((file, name, chat_id, mark))
+            if file is not None and self.app.chat_screen.current_chat_id is not None:
+                try:
+                    file = file[0]
+                    name = os.path.split(file)[1]
+                    mark = uuid.uuid4().hex
+                    chat_id = self.app.chat_screen.current_chat_id
 
-                data = {
-                    "action": "get_members_keys",
-                    'token': self.app.token,
-                    "chat_id": chat_id
-                }
+                    self.app.send_files.append((file, name, chat_id, mark))
 
-                self.app.send_to_websocket(data)
-            except Exception as e:
-                print(e)
+                    data = {
+                        "action": "get_members_keys",
+                        'token': self.app.token,
+                        "chat_id": chat_id
+                    }
+
+                    self.app.send_to_websocket(data)
+                except Exception as e:
+                    print(e)
+
+    def pin_file_android(self, file):
+        if file:
+            file = file[0]
+            ss = SharedStorage()
+            file = ss.copy_from_shared(file)
+
+            if file is not None and self.app.chat_screen.current_chat_id is not None:
+                try:
+                    name = os.path.split(file)[1]
+                    mark = uuid.uuid4().hex
+                    chat_id = self.app.chat_screen.current_chat_id
+
+                    self.app.send_files.append((file, name, chat_id, mark))
+
+                    data = {
+                        "action": "get_members_keys",
+                        'token': self.app.token,
+                        "chat_id": chat_id
+                    }
+
+                    self.app.start_websocket()
+                    Clock.schedule_once(lambda dt: self.app.send_to_websocket(data), 2)
+                except Exception as e:
+                    print(e)
 
     def back_to_chats(self):
         self.app.sm.current = 'chat'
@@ -1021,18 +1136,40 @@ class AddChatScreen(MDScreen):
         self.app.send_to_websocket(data)
 
     def pin_image_group(self):
-        image = filechooser.open_file()
+        if platform == 'android':
+            request_permissions([Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE, "android.permission.MANAGE_EXTERNAL_STORAGE", Permission.READ_MEDIA_IMAGES, Permission.READ_MEDIA_VIDEO, Permission.READ_MEDIA_AUDIO])
 
-        if image is not None:
-            try:
-                image = image[0]
-                name = os.path.split(image)[1]
+            chooser = Chooser(self.pin_image_group_android)
+            chooser.choose_content("*/*")
+        else:
+            image = filechooser.open_file()
 
-                image = PILImage.open(image)
-                self.current_image = image.resize((256, 256))
-                self.image_label.text = 'Изображение: ' + name
-            except Exception:
-                pass
+            if image is not None:
+                try:
+                    image = image[0]
+                    name = os.path.split(image)[1]
+
+                    image = PILImage.open(image)
+                    self.current_image = image.resize((256, 256))
+                    self.image_label.text = 'Изображение: ' + name
+                except Exception:
+                    pass
+
+    def pin_image_group_android(self, image):
+        if image:
+            image = image[0]
+            ss = SharedStorage()
+            image = ss.copy_from_shared(image)
+
+            if image is not None:
+                try:
+                    name = os.path.split(image)[1]
+
+                    image = PILImage.open(image)
+                    self.current_image = image.resize((256, 256))
+                    self.image_label.text = 'Изображение: ' + name
+                except Exception:
+                    pass
 
 
 class SettingsScreen(MDScreen):
@@ -1170,16 +1307,39 @@ class SettingsScreen(MDScreen):
             self.export_key()
 
     def export_key(self):
-        save_file = filechooser.save_file()
+        if platform == 'android':
+            request_permissions([Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE, "android.permission.MANAGE_EXTERNAL_STORAGE", Permission.READ_MEDIA_IMAGES, Permission.READ_MEDIA_VIDEO, Permission.READ_MEDIA_AUDIO])
+            ss = SharedStorage()
 
-        if save_file is not None:
+            file_name = os.path.join(LOCAL_DIR, "cur_priv_key")
+
             key_file = os.path.join(KEYS_DIR, self.app.token)
+
             if os.path.exists(key_file):
                 with open(key_file, 'rb') as file:
                     key = file.read().decode()
 
-                with open(save_file[0], 'w') as file:
+                with open(file_name, 'w') as file:
                     file.writelines([self.app.token + '\n', key])
+
+            ss.copy_to_shared(file_name, "documents")
+
+            self.dialog = MDDialog(
+                title="Экспорт ключа",
+                text="Ключ успешно экспортирован в documents/Arlene Colloquium/priv_key"
+            )
+            self.dialog.open()
+        else:
+            save_file = filechooser.save_file()
+
+            if save_file is not None:
+                key_file = os.path.join(KEYS_DIR, self.app.token)
+                if os.path.exists(key_file):
+                    with open(key_file, 'rb') as file:
+                        key = file.read().decode()
+
+                    with open(save_file[0], 'w') as file:
+                        file.writelines([self.app.token + '\n', key])
 
     def logout_dial(self):
         self.dialog = MDDialog(
@@ -1229,25 +1389,41 @@ class SettingsScreen(MDScreen):
         self.per_logout_button.disabled = False
 
     def upload_avatar(self):
-        image = filechooser.open_file()
+        if platform == 'android':
+            request_permissions([Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE, "android.permission.MANAGE_EXTERNAL_STORAGE", Permission.READ_MEDIA_IMAGES, Permission.READ_MEDIA_VIDEO, Permission.READ_MEDIA_AUDIO])
+            
+            chooser = Chooser(self.true_upload_avatar)
+            chooser.choose_content("*/*")
+        else:
+            image = filechooser.open_file()
+            self.true_upload_avatar(image, False)
 
+    def true_upload_avatar(self, image, andro=True):
+        if andro:
+            if image:
+                image = image[0]
+                ss = SharedStorage()
+                image = ss.copy_from_shared(image)
+                self.app.start_websocket()
+                Clock.schedule_once(lambda dt: self.true_upload_avatar([image], False), 2)
+                
         try:
             if image is not None:
                 image = PILImage.open(image[0]).resize((256, 256))
 
-            byte_buff = io.BytesIO()
+                byte_buff = io.BytesIO()
 
-            image.save(byte_buff, format='PNG')
+                image.save(byte_buff, format='PNG')
 
-            image = base64.encodebytes(byte_buff.getvalue()).decode('ascii')
+                image = base64.encodebytes(byte_buff.getvalue()).decode('ascii')
 
-            data = {
-                "action": "upload_avatar",
-                'token': self.app.token,
-                "image": image
-            }
+                data = {
+                    "action": "upload_avatar",
+                    'token': self.app.token,
+                    "image": image
+                }
 
-            self.app.send_to_websocket(data)
+                self.app.send_to_websocket(data)
         except Exception:
             pass
 
@@ -1335,25 +1511,58 @@ class ImportKeyScreen(MDScreen):
         self.app.logout()
 
     def import_key(self):
-        key_file = filechooser.open_file()
-        self.show_error('')
+        if platform == 'android':
+            request_permissions([Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE, "android.permission.MANAGE_EXTERNAL_STORAGE", Permission.READ_MEDIA_IMAGES, Permission.READ_MEDIA_VIDEO, Permission.READ_MEDIA_AUDIO])
 
-        try:
-            if key_file is not None:
-                with open(key_file[0]) as file:
-                    data = file.readlines()
+            chooser = Chooser(self.import_key_android)
+            chooser.choose_content("*/*")
+        else:
+            key_file = filechooser.open_file()
+            self.show_error('')
 
-                token, key = data[0].rstrip('\n'), ''.join(data[1:])
+            try:
+                if key_file is not None:
+                    with open(key_file[0]) as file:
+                        data = file.readlines()
 
-                if token != self.app.token:
-                    self.show_error('Неверный файл.')
-                else:
-                    with open(os.path.join(KEYS_DIR, token), 'wb') as file:
-                        file.write(bytes(key, encoding='UTF-8'))
+                    token, key = data[0].rstrip('\n'), ''.join(data[1:])
 
-                    self.app.auto_login()
-        except Exception:
-            self.show_error('Не удалось прочитать файл.')
+                    if token != self.app.token:
+                        self.show_error('Неверный файл.')
+                    else:
+                        with open(os.path.join(KEYS_DIR, token), 'wb') as file:
+                            file.write(bytes(key, encoding='UTF-8'))
+
+                        self.app.auto_login()
+            except Exception:
+                self.show_error('Не удалось прочитать файл.')
+
+    def import_key_android(self, path):
+        if path:
+            path = path[0]
+            ss = SharedStorage()
+            key_file = ss.copy_from_shared(path)
+            
+
+            self.show_error('')
+
+            try:
+                if key_file is not None:
+                    with open(key_file) as file:
+                        data = file.readlines()
+
+                    token, key = data[0].rstrip('\n'), ''.join(data[1:])
+
+                    if token != self.app.token:
+                        self.show_error('Неверный файл.')
+                    else:
+                        with open(os.path.join(KEYS_DIR, token), 'wb') as file:
+                            file.write(bytes(key, encoding='UTF-8'))
+
+                        self.app.start_websocket()
+                        Clock.schedule_once(lambda dt: self.app.auto_login(), 2)    
+            except Exception:
+                self.show_error('Не удалось прочитать файл.')
 
     def show_error(self, text):
         if text:
@@ -1491,20 +1700,21 @@ class ChatApp(MDApp):
 
                         fin_data.append(cur)
 
-                    chat_file = os.path.join(CHATS_DIR, str(data['chat_id']))
+                    if fin_data:
+                        chat_file = os.path.join(CHATS_DIR, str(data['chat_id']))
 
-                    if os.path.exists(chat_file):
-                        with open(chat_file) as file:
-                            f_data = json.load(file)
+                        if os.path.exists(chat_file):
+                            with open(chat_file) as file:
+                                f_data = json.load(file)
 
-                        fin_data = f_data + fin_data
+                            fin_data = f_data + fin_data
 
-                    with open(chat_file, 'w') as file:
-                        json.dump(fin_data, file)
+                        with open(chat_file, 'w') as file:
+                            json.dump(fin_data, file)
 
-                    if self.chat_screen.current_chat_id == data['chat_id']:
-                        Clock.schedule_once(
-                            lambda dt: self.chat_screen.open_chat(self.chat_screen.current_chat_id, False))
+                        if self.chat_screen.current_chat_id == data['chat_id']:
+                            Clock.schedule_once(
+                                lambda dt: self.chat_screen.open_chat(self.chat_screen.current_chat_id, False))
             elif action == 'get_members_keys':
                 if data['status'] == 'OK':
                     chat_id = data['chat_id']
@@ -1513,7 +1723,7 @@ class ChatApp(MDApp):
                     files = list(filter(lambda x: x[2] == chat_id, self.send_files))
 
                     for i in data['content']:
-                        public_key = serialization.load_pem_public_key(bytes(list(i.values())[0], encoding='UTF-8'))
+                        public_key = serialization.load_pem_public_key(bytes(list(i.values())[0], encoding='UTF-8'), backend=default_backend())
 
                         for or_message in messages:
                             or_message = bytes(or_message, encoding='UTF-8')
@@ -1554,7 +1764,6 @@ class ChatApp(MDApp):
                                 fin = bytes()
 
                                 for j in range(0, len(file_data), 180):
-                                    print(len(file_data) - j)
                                     now = public_key.encrypt(
                                         file_data[j:j + 180],
                                         padding.OAEP(
@@ -1670,24 +1879,28 @@ class ChatApp(MDApp):
 
                     file = list(filter(lambda x: x[3] == mark, self.send_files))[0]
 
-                    self.get_sending_files[mark][to_username] -= 1
+                    # self.get_sending_files[mark][to_username] -= 1
+                    print(self.get_sending_files)
 
-                    if not self.get_sending_files[mark][to_username]:
-                        data = {
-                            "action": "send_file",
-                            'token': self.token,
-                            "to_username": to_username,
-                            "message": c_message,
-                            "chat_id": file[2],
-                            "name": data['name']
-                        }
+                    try:
+                        if self.get_sending_files[mark][to_username]:
+                            data = {
+                                "action": "send_file",
+                                'token': self.token,
+                                "to_username": to_username,
+                                "message": c_message,
+                                "chat_id": file[2],
+                                "name": data['name']
+                            }
 
-                        self.send_to_websocket(data)
+                            self.send_to_websocket(data)
 
-                        del self.get_sending_files[mark][to_username]
+                            del self.get_sending_files[mark][to_username]
 
-                        if not self.get_sending_files[mark]:
-                            del self.send_files[self.send_files.index(file)]
+                            if not self.get_sending_files[mark]:
+                                del self.send_files[self.send_files.index(file)]
+                    except Exception:
+                        pass
             elif action == 'download_file':
                 if data['status'] == 'OK':
                     with open(os.path.join(FILES_DIR, data['name']), 'a') as file:
@@ -1733,6 +1946,7 @@ class ChatApp(MDApp):
             print("Ошибка подключения WebSocket:", e)
 
     def send_to_websocket(self, payload: dict):
+        print(payload)
         if self.ws and self.ws.sock and self.ws.sock.connected:
             try:
                 self.ws.send(FERNET_KEY.encrypt(json.dumps(payload, ensure_ascii=False).encode()))
@@ -1740,6 +1954,7 @@ class ChatApp(MDApp):
             except Exception as e:
                 print("Ошибка отправки в WebSocket:", e)
         else:
+            Clock.schedule_once(lambda dt: self.send_to_websocket(payload), 1)
             print("Нет соединения с WebSocket")
 
         return False
@@ -1794,7 +2009,7 @@ class ChatApp(MDApp):
         with open(os.path.join(KEYS_DIR, self.token), 'rb') as file:
             data = file.read()
 
-        self.private_key = serialization.load_pem_private_key(data, None)
+        self.private_key = serialization.load_pem_private_key(data, None, backend=default_backend())
 
     def open_settings(self):
         self.sm.current = 'settings'
