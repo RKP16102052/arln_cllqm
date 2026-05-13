@@ -68,7 +68,6 @@ def reg_verification(data: dict):
         session.close()
         return {"action": "register", "status": "error", "message": "Пользователь с такой почтой уже зарегистрирован"}
 
-    # Удаляем старую временную запись для этой почты (если есть)
     old_temp = session.query(TempUser).filter(TempUser.email == email).first()
     if old_temp:
         session.delete(old_temp)
@@ -113,7 +112,6 @@ def fin_reg(data: dict):
 
     print(f"[DEBUG] fin_reg received: token={token}, code={code}, key={'present' if key else 'None'}")
 
-    # Проверка на None с подробным сообщением
     if token is None:
         return {"action": "register_verification", "status": "error", "message": "Отсутствует токен"}
     if code is None:
@@ -123,7 +121,6 @@ def fin_reg(data: dict):
 
     session = db_session.create_session()
 
-    # Ищем временного пользователя
     temp_user = session.query(TempUser).filter(TempUser.token == token).first()
 
     print(f"[DEBUG] temp_user found: {temp_user is not None}")
@@ -133,7 +130,6 @@ def fin_reg(data: dict):
         return {"action": "register_verification", "status": "error",
                 "message": "Сессия истекла или неверный токен. Зарегистрируйтесь заново."}
 
-    # Проверяем код (сравниваем как int)
     try:
         code_int = int(code)
         if temp_user.verification_code != code_int:
@@ -144,7 +140,6 @@ def fin_reg(data: dict):
         session.close()
         return {"action": "register_verification", "status": "error", "message": "Неверный формат кода"}
 
-    # Проверяем время жизни
     if temp_user.die_time < int(time.time()):
         session.delete(temp_user)
         session.commit()
@@ -152,7 +147,6 @@ def fin_reg(data: dict):
         return {"action": "register_verification", "status": "error",
                 "message": "Код подтверждения истек. Зарегистрируйтесь заново."}
 
-    # Создаем постоянного пользователя
     user = User()
     user.name = temp_user.name
     user.email = temp_user.email
@@ -836,7 +830,6 @@ async def handler(websocket):
     connected_clients.add(websocket)
     try:
         async for raw in websocket:
-            # Проверяем тип полученных данных
             if isinstance(raw, str):
                 encrypted_data = raw.encode('utf-8')
             elif isinstance(raw, bytes):
@@ -845,16 +838,12 @@ async def handler(websocket):
                 encrypted_data = bytes(raw)
 
             try:
-                # Расшифровываем
                 decrypted_bytes = FERNET_KEY.decrypt(encrypted_data)
                 decrypted = decrypted_bytes.decode('utf-8')
 
-                # Удаляем PKCS7 padding (если есть)
-                # Python Fernet обычно сам удаляет padding, но на всякий случай
                 if decrypted and decrypted[-1] in '\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10':
                     pad_len = ord(decrypted[-1])
                     if 1 <= pad_len <= 16:
-                        # Проверяем, что все padding символы одинаковые
                         if all(ord(c) == pad_len for c in decrypted[-pad_len:]):
                             decrypted = decrypted[:-pad_len]
 
@@ -863,14 +852,12 @@ async def handler(websocket):
 
             except Exception as e:
                 print(f"Decryption error: {e}")
-                # Отправляем ошибку клиенту
                 error_response = {"status": "error", "message": f"Decryption failed: {str(e)}"}
                 await websocket.send(FERNET_KEY.encrypt(json.dumps(error_response).encode()))
                 continue
 
             action = data.get('action', None)
 
-            # Обработка действий
             if action == 'register':
                 response = reg_verification(data)
             elif action == 'register_verification':
@@ -914,7 +901,6 @@ async def handler(websocket):
             else:
                 response = {"status": "error", "message": "Неизвестное действие"}
 
-            # Отправляем ответ
             if response:
                 try:
                     encrypted_response = FERNET_KEY.encrypt(json.dumps(response, ensure_ascii=False).encode())
@@ -955,7 +941,7 @@ def send_email(message: MIMEMultipart):
         except Exception:
             print('Неудача.')
 
-
+# TODO не трогать, поправлю
 def delete_chat(data: dict):
     token = data.get('token', None)
     chat_id = data.get('chat_id', None)
@@ -976,22 +962,18 @@ def delete_chat(data: dict):
         session.close()
         return {"action": "delete_chat", "status": "error", "message": "Чат не найден"}
 
-    # Проверяем, является ли пользователь создателем чата
     if chat.created_by != user.id:
         session.close()
         return {"action": "delete_chat", "status": "error", "message": "Только создатель чата может удалить его"}
 
-    # Удаляем файл с сообщениями
     messages_file = os.path.join(CHATS_DATA_LOCATION, f"{chat_id}.json")
     if os.path.exists(messages_file):
         os.remove(messages_file)
 
-    # Удаляем изображение группы (если есть)
     group_image = os.path.join(GROUP_IMAGES_LOCATION, f"{chat_id}.png")
     if os.path.exists(group_image):
         os.remove(group_image)
 
-    # Удаляем чат из списков чатов всех участников
     members = chat.members.split(';')
     for member_id in members:
         member = session.query(User).filter(User.id == int(member_id)).first()
@@ -1000,8 +982,6 @@ def delete_chat(data: dict):
             if str(chat_id) in chats_list:
                 chats_list.remove(str(chat_id))
                 member.chats = ';'.join(chats_list) if chats_list else None
-
-    # Удаляем сам чат
     session.delete(chat)
     session.commit()
     session.close()

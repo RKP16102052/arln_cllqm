@@ -491,7 +491,6 @@
             return false;
         }
 
-        // Добавляем в очередь
         sendQueue.push(payload);
 
         if (isSending) return true;
@@ -503,7 +502,6 @@
             try {
                 const encryptedBase64 = await encryptForSend(nextPayload);
                 ws.send(encryptedBase64);
-                // Небольшая задержка между отправками
                 await new Promise(r => setTimeout(r, 50));
             } catch (e) {
                 console.error("Ошибка шифрования/отправки:", e);
@@ -724,11 +722,6 @@
         }
     }
 
-    // Остальные функции (generateRSAKeyPair, arrayBufferToPem, hasPrivateKey,
-    // showScreen, showError, renderChats, escapeHtml, appendMessage,
-    // startChatScreen, autoLogin, logout и т.д.) остаются без изменений
-    // ... (скопируйте их из вашего текущего файла)
-
     // ---------- RSA ключи ----------
     async function generateRSAKeyPair() {
         const keyPair = await crypto.subtle.generateKey(
@@ -796,14 +789,12 @@
         if (!nick || !email || !pwd) return showError("Заполните поля", true);
         if (pwd.length < 8) return showError("Пароль не менее 8 символов", true);
 
-        // Сначала генерируем ключи
         console.log("Generating RSA keys...");
         const { privatePem, publicPem } = await generateRSAKeyPair();
         privateKeyPem = privatePem;
         publicKeyForReg = publicPem;
         console.log("RSA keys generated");
 
-        // Отправляем запрос на регистрацию
         wsSend({
             action: "register",
             nickname: nick,
@@ -816,31 +807,24 @@
     async function autoLoginAfterReg() {
         const { privatePem, publicPem } = await generateRSAKeyPair();
         privateKeyPem = privatePem;
-        publicKeyForReg = publicPem;  // Сохраняем публичный ключ
+        publicKeyForReg = publicPem;
         localStorage.setItem(`priv_${token}`, privatePem);
-        // Не вызываем autoLogin() здесь
 }
 
     document.getElementById("verify-btn").onclick = async () => {
         const code = document.getElementById("code-input").value;
 
-        // Проверяем код
         if (!code || code.length !== 6 || !/^\d+$/.test(code)) {
             showError("Введите 6-значный код", false, "code-error");
             return;
         }
 
-        // Используем token или pendingToken
         const currentToken = token || pendingToken;
 
-        // Проверяем, что ключ существует
         if (!publicKeyForReg) {
-            // Пытаемся загрузить ключ из localStorage
             const savedKey = localStorage.getItem(`priv_${currentToken}`);
             if (savedKey) {
                 console.log("Found saved key, using it");
-                // Нам нужен публичный ключ, но у нас есть только приватный
-                // Поэтому лучше пересоздать сессию
                 showError("Ошибка: ключ не найден. Пожалуйста, зарегистрируйтесь заново.", false, "code-error");
                 return;
             }
@@ -866,7 +850,6 @@
 
     function startChatScreen() {
         if (chatsInterval) clearInterval(chatsInterval);
-        // Увеличиваем частоту обновления чатов до 2 секунд
         chatsInterval = setInterval(() => wsSend({ action: "get_chats", token }), 2000);
         wsSend({ action: "get_chats", token });
         showScreen("chat-screen");
@@ -931,7 +914,6 @@
         if (container) container.innerHTML = "";
 
         if (messagesInterval) clearInterval(messagesInterval);
-        // Увеличиваем частоту обновления сообщений до 1 секунды
         messagesInterval = setInterval(() => {
             if (currentChatId) wsSend({ action: "get_messages", token, chat_id: currentChatId });
         }, 1000);
@@ -990,7 +972,7 @@
         privateKeyPem = null;
         currentChatId = null;
         pendingMessages = {};
-        processedMessages = new Set(); // Добавьте эту строку
+        processedMessages = new Set();
         if (messagesInterval) clearInterval(messagesInterval);
         if (chatsInterval) clearInterval(chatsInterval);
         showScreen("auth-screen");
@@ -1012,7 +994,6 @@
         autoLogin();
     };
 
-    // Tabs
     document.querySelectorAll("#auth-tabs .tab").forEach(tab => {
         tab.onclick = () => {
             const isLogin = tab.dataset.tab === "login";
@@ -1062,8 +1043,6 @@
             const savedKey = localStorage.getItem(`priv_${savedToken}`);
             if (savedKey) {
                 privateKeyPem = savedKey;
-                // Нам нужен публичный ключ из приватного (сложно)
-                // Поэтому лучше при повторной попытке перегенерировать
                 regenerateKeyForExistingToken().then(() => {
                     if (privateKeyPem) autoLogin();
                     else showScreen("import-screen");
