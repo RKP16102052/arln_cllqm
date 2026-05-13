@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Arlene Messenger — Веб-клиент (финал)</title>
+    <title>Arlene Messenger — Веб-клиент</title>
     <style>
         * {
             margin: 0;
@@ -237,108 +237,115 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script>
-        // ---------- Fernet для браузера (совместимо с Python cryptography.fernet) ----------
-        (function() {
-            window.Fernet = {};
+        // ---------- РАБОЧАЯ реализация Fernet (совместимо с Python cryptography.fernet) ----------
+        const FERNET_KEY_B64 = "b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=";
 
-            function b64ToBytes(b64) {
-                let standard = b64.replace(/-/g, '+').replace(/_/g, '/');
-                while (standard.length % 4) standard += '=';
-                const bin = atob(standard);
-                const bytes = new Uint8Array(bin.length);
-                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-                return bytes;
+        function b64ToBytes(b64) {
+            let standard = b64.replace(/-/g, '+').replace(/_/g, '/');
+            while (standard.length % 4) standard += '=';
+            const bin = atob(standard);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return bytes;
+        }
+
+        function bytesToB64(bytes) {
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            let b64 = btoa(binary);
+            b64 = b64.replace(/\+/g, '-').replace(/\//g, '_');
+            return b64;
+        }
+
+        class FernetClient {
+            constructor(keyBase64) {
+                const keyBytes = b64ToBytes(keyBase64);
+                this.signKey = keyBytes.slice(0, 16);
+                this.encKey = keyBytes.slice(16, 32);
             }
 
-            function bytesToB64(bytes) {
-                let binary = '';
-                for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-                let b64 = btoa(binary);
-                b64 = b64.replace(/\+/g, '-').replace(/\//g, '_');
-                while (b64.length % 4) b64 += '=';
-                return b64;
-            }
-
-            async function getKeyBytes(keyBase64) {
-                return b64ToBytes(keyBase64);
-            }
-
-            window.Fernet.encrypt = async function(plaintext, keyBase64) {
-                const key = await getKeyBytes(keyBase64);
-                const signingKey = key.slice(0, 16);
-                const encryptionKey = key.slice(16, 32);
-
+            async encrypt(plaintext) {
                 const version = new Uint8Array([0x80]);
                 const timestamp = new Uint8Array(8);
                 let ts = Math.floor(Date.now() / 1000);
-                for (let i = 7; i >= 0; i--) {
-                    timestamp[i] = ts & 0xff;
-                    ts >>= 8;
-                }
+                for (let i = 7; i >= 0; i--) { timestamp[i] = ts & 0xff; ts >>= 8; }
 
-                const iv = crypto.getRandomValues(new Uint8Array(8));
+                const iv = crypto.getRandomValues(new Uint8Array(16));
                 const plainBytes = new TextEncoder().encode(plaintext);
-                // PKCS7 padding
-                const blockSize = 16;
-                const padLen = blockSize - (plainBytes.length % blockSize);
+                const padLen = 16 - (plainBytes.length % 16);
                 const padded = new Uint8Array(plainBytes.length + padLen);
                 padded.set(plainBytes);
-                for (let i = 0; i < padLen; i++) padded[plainBytes.length + i] = padLen;
+                for (let i = 0; i < padLen; i++) {
+                    padded[plainBytes.length + i] = padLen;
+                }
 
                 const fullIv = new Uint8Array(16);
                 fullIv.set(iv, 0);
-                const aesKey = await crypto.subtle.importKey("raw", encryptionKey, { name: "AES-CBC" }, false, ["encrypt"]);
-                const ciphertextBuf = await crypto.subtle.encrypt({ name: "AES-CBC", iv: fullIv }, aesKey, padded);
-                const ciphertext = new Uint8Array(ciphertextBuf);
+                const aesKey = await crypto.subtle.importKey('raw', this.encKey, { name: 'AES-CBC' }, false, ['encrypt']);
+                const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-CBC', iv: fullIv }, aesKey, padded));
 
-                // HMAC
-                const toSign = new Uint8Array(1 + 8 + 8 + ciphertext.length);
+                const toSign = new Uint8Array(1 + 8 + 16 + ciphertext.length);
                 toSign.set(version, 0);
                 toSign.set(timestamp, 1);
-                toSign.set(iv, 1 + 8);
-                toSign.set(ciphertext, 1 + 8 + 8);
-                const hmacKey = await crypto.subtle.importKey("raw", signingKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-                const hmacBuf = await crypto.subtle.sign("HMAC", hmacKey, toSign);
-                const hmac = new Uint8Array(hmacBuf).slice(0, 32);
+                toSign.set(iv, 9);
+                toSign.set(ciphertext, 25);
 
-                const result = new Uint8Array(1 + 8 + 8 + ciphertext.length + 32);
+                const hmacKey = await crypto.subtle.importKey('raw', this.signKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+                const hmac = new Uint8Array(await crypto.subtle.sign('HMAC', hmacKey, toSign)).slice(0, 32);
+
+                const result = new Uint8Array(1 + 8 + 16 + ciphertext.length + 32);
                 result.set(version, 0);
                 result.set(timestamp, 1);
-                result.set(iv, 1 + 8);
-                result.set(ciphertext, 1 + 8 + 8);
-                result.set(hmac, 1 + 8 + 8 + ciphertext.length);
+                result.set(iv, 9);
+                result.set(ciphertext, 25);
+                result.set(hmac, 25 + ciphertext.length);
+
                 return bytesToB64(result);
-            };
+            }
 
-            window.Fernet.decrypt = async function(tokenB64, keyBase64) {
-                const data = b64ToBytes(tokenB64);
-                const key = await getKeyBytes(keyBase64);
-                const signingKey = key.slice(0, 16);
-                const encryptionKey = key.slice(16, 32);
+            async decrypt(tokenBase64) {
+                const data = b64ToBytes(tokenBase64);
+                if (data.length < 57) throw new Error('Token too short');
 
-                if (data.length < 1 + 8 + 8 + 32) throw new Error("Invalid token length");
                 const version = data[0];
-                if (version !== 0x80) throw new Error("Unsupported version");
-                const timestamp = data.slice(1, 9);
-                const iv = data.slice(9, 17);
-                const ciphertext = data.slice(17, data.length - 32);
-                const hmacReceived = data.slice(data.length - 32);
+                if (version !== 0x80) throw new Error('Unsupported version');
 
+                const iv = data.slice(9, 25);
+                const ciphertext = data.slice(25, data.length - 32);
+                const hmacReceived = data.slice(data.length - 32);
                 const toVerify = data.slice(0, data.length - 32);
-                const hmacKey = await crypto.subtle.importKey("raw", signingKey, { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-                const isValid = await crypto.subtle.verify("HMAC", hmacKey, hmacReceived, toVerify);
-                if (!isValid) throw new Error("HMAC mismatch");
+
+                const hmacKey = await crypto.subtle.importKey('raw', this.signKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+                const isValid = await crypto.subtle.verify('HMAC', hmacKey, hmacReceived, toVerify);
+                if (!isValid) throw new Error('HMAC mismatch');
 
                 const fullIv = new Uint8Array(16);
                 fullIv.set(iv, 0);
-                const aesKey = await crypto.subtle.importKey("raw", encryptionKey, { name: "AES-CBC" }, false, ["decrypt"]);
-                const paddedPlain = await crypto.subtle.decrypt({ name: "AES-CBC", iv: fullIv }, aesKey, ciphertext);
-                const paddedBytes = new Uint8Array(paddedPlain);
-                const padLen = paddedBytes[paddedBytes.length - 1];
-                if (padLen < 1 || padLen > 16) throw new Error("Invalid padding");
-                return new TextDecoder().decode(paddedBytes.slice(0, paddedBytes.length - padLen));
-            };
-        })();
+                const aesKey = await crypto.subtle.importKey('raw', this.encKey, { name: 'AES-CBC' }, false, ['decrypt']);
+                const decrypted = await crypto.subtle.decrypt({ name: 'AES-CBC', iv: fullIv }, aesKey, ciphertext);
+
+                // Python Fernet возвращает данные БЕЗ padding, просто декодируем
+                const bytes = new Uint8Array(decrypted);
+                return new TextDecoder().decode(bytes);
+            }
+        }
+
+        let fernet = null;
+
+        // Инициализация Fernet
+        function initFernet() {
+            fernet = new FernetClient(FERNET_KEY_B64);
+            console.log("Fernet initialized");
+        }
+
+        // Функции для WebSocket
+        async function encryptForSend(payload) {
+            return await fernet.encrypt(JSON.stringify(payload));
+        }
+
+        async function decryptReceived(encryptedBase64) {
+            return await fernet.decrypt(encryptedBase64);
+        }
     </script>
 </head>
 <body>
@@ -465,33 +472,55 @@
     let chatsList = [];
     let messagesInterval = null;
     let chatsInterval = null;
-    let pendingMessages = [];
+    let pendingMessages = {}; // Объект для хранения ожидающих сообщений
+    let processedMessages = new Set(); // Для отслеживания обработанных сообщений
+    let isRequestingKeys = {}; // Флаг для предотвращения множественных запросов ключей
+    let lastMessageTime = {};
+    let publicKeyForReg = null;
+    let pendingToken = null;
 
-    const FERNET_KEY_B64 = "b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=";
-    const WS_URL = "ws://130.12.45.26:8765";
+    const WS_URL = "ws://127.0.0.1:8765";
 
-    // ---------- WebSocket ----------
+    // ---------- WebSocket (остается без изменений) ----------
+    let isSending = false;
+    let sendQueue = [];
+
     async function wsSend(payload) {
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             console.error("WebSocket не подключён");
             return false;
         }
-        try {
-            const encryptedBase64 = await Fernet.encrypt(JSON.stringify(payload), FERNET_KEY_B64);
-            ws.send(encryptedBase64);
-            return true;
-        } catch (e) {
-            console.error("Ошибка шифрования/отправки:", e);
-            return false;
+
+        // Добавляем в очередь
+        sendQueue.push(payload);
+
+        if (isSending) return true;
+
+        isSending = true;
+
+        while (sendQueue.length > 0) {
+            const nextPayload = sendQueue.shift();
+            try {
+                const encryptedBase64 = await encryptForSend(nextPayload);
+                ws.send(encryptedBase64);
+                // Небольшая задержка между отправками
+                await new Promise(r => setTimeout(r, 50));
+            } catch (e) {
+                console.error("Ошибка шифрования/отправки:", e);
+            }
         }
+
+        isSending = false;
+        return true;
     }
 
     function connectWebSocket() {
+        initFernet();
         ws = new WebSocket(WS_URL);
         ws.onopen = () => console.log("WebSocket connected");
         ws.onmessage = async (event) => {
             try {
-                const decrypted = await Fernet.decrypt(event.data, FERNET_KEY_B64);
+                const decrypted = await decryptReceived(event.data);
                 const data = JSON.parse(decrypted);
                 handleServerMessage(data);
             } catch (e) {
@@ -508,16 +537,21 @@
     // ---------- Обработка сообщений сервера ----------
     async function handleServerMessage(data) {
         const action = data.action;
+        console.log("Server message:", action);
+
         if (action === "register") {
             if (data.status === "OK") {
                 token = data.token;
                 localStorage.setItem("token", token);
+                localStorage.setItem(`priv_${token}`, privateKeyPem);
                 showScreen("code-screen");
             } else showError(data.message, true);
         } else if (action === "register_verification") {
             if (data.status === "OK") {
-                await autoLoginAfterReg();
-            } else showError(data.message, false, "code-error");
+                autoLogin();
+            } else {
+                showError(data.message, false, "code-error");
+            }
         } else if (action === "login") {
             if (data.status === "OK") {
                 token = data.token;
@@ -534,63 +568,166 @@
         } else if (action === "get_chats" && data.status === "OK") {
             chatsList = data.chats || [];
             renderChats();
-        } else if (action === "create_chat_with_user" || action === "create_group") {
+        } else if (action === "create_chat_with_user") {
             if (data.status === "OK") {
                 showScreen("chat-screen");
+                wsSend({ action: "get_chats", token });
             } else {
-                const isPersonal = (action === "create_chat_with_user");
-                showError(data.message, isPersonal, isPersonal ? "personal-error" : "group-error");
+                showError(data.message, false, "personal-error");
+            }
+        } else if (action === "create_group") {
+            if (data.status === "OK") {
+                showScreen("chat-screen");
+                wsSend({ action: "get_chats", token });
+            } else {
+                showError(data.message, false, "group-error");
+            }
+        } else if (action === "delete_chat") {
+            if (data.status === "OK") {
+                console.log("Chat deleted:", data.chat_id);
+                wsSend({ action: "get_chats", token });
+                if (currentChatId === data.chat_id) {
+                    currentChatId = null;
+                    document.getElementById("messages-scroll").innerHTML = "";
+                }
+            } else {
+                console.error("Delete chat error:", data.message);
             }
         } else if (action === "get_messages" && data.status === "OK") {
             await processMessages(data.chat_id, data.data);
         } else if (action === "get_members_keys" && data.status === "OK") {
+            isRequestingKeys[data.chat_id] = false;
             await sendEncryptedMessagesToMembers(data.chat_id, data.content);
+        } else if (action === "send_message" && data.status === "OK") {
+            console.log("Message sent successfully");
+        } else if (action === "error") {
+            console.error("Server error:", data.message);
         }
     }
 
+    // ---------- Обработка сообщений с защитой от дублей ----------
     async function processMessages(chatId, messagesArray) {
         if (chatId !== currentChatId) return;
+        const container = document.getElementById("messages-scroll");
+        if (!container) return;
+
         for (let msg of messagesArray) {
-            let decrypted = "[ошибка]";
-            try {
-                decrypted = await decryptWithPrivateKey(msg.message);
-            } catch (e) { console.error(e); }
+            const msgKey = `${chatId}_${msg.from}_${msg.time}_${msg.message.substring(0, 50)}`;
+            if (processedMessages.has(msgKey)) continue;
+
+            let decrypted = msg.message;
+            if (msg.message && typeof msg.message === 'string' &&
+                msg.message.length > 100 && /^[A-Za-z0-9+/=]+$/.test(msg.message)) {
+                try {
+                    decrypted = await decryptWithPrivateKey(msg.message);
+                } catch (e) {
+                    decrypted = "[Зашифровано]";
+                }
+            }
+
+            processedMessages.add(msgKey);
             appendMessage(msg.from, decrypted, msg.from === nickname);
+        }
+        container.scrollTop = container.scrollHeight;
+    }
+
+    document.getElementById("send-message-btn").onclick = async () => {
+        const msg = document.getElementById("message-input").value.trim();
+        if (!msg || !currentChatId) return;
+
+        document.getElementById("message-input").value = "";
+
+        if (!pendingMessages[currentChatId]) {
+            pendingMessages[currentChatId] = [];
+        }
+        pendingMessages[currentChatId].push(msg);
+        appendMessage(nickname, msg, true);
+
+        if (!isRequestingKeys[currentChatId]) {
+            isRequestingKeys[currentChatId] = true;
+            await wsSend({ action: "get_members_keys", token, chat_id: currentChatId });
+        }
+    };
+
+    async function sendEncryptedMessagesToMembers(chatId, membersKeys) {
+        if (!pendingMessages[chatId] || pendingMessages[chatId].length === 0) {
+            return;
+        }
+
+        const messagesToSend = [...pendingMessages[chatId]];
+        pendingMessages[chatId] = [];
+
+        for (let msgText of messagesToSend) {
+            for (let member of membersKeys) {
+                const [username, pubKey] = Object.entries(member)[0];
+                if (username === nickname) continue;
+
+                try {
+                    const encrypted = await encryptWithPublicKey(msgText, pubKey);
+                    await wsSend({
+                        action: "send_message",
+                        token,
+                        to_username: username,
+                        message: encrypted,
+                        chat_id: chatId
+                    });
+                } catch(e) {
+                    console.error("Encrypt error for", username, e);
+                }
+            }
         }
     }
 
+    // ---------- RSA функции ----------
     async function decryptWithPrivateKey(encryptedBase64) {
         if (!privateKeyPem) return "[Нет ключа]";
-        const pem = privateKeyPem;
-        const b64 = pem.replace(/-----\w+ PRIVATE KEY-----/g, "").replace(/\s/g, "");
-        const binaryKey = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
-        const key = await crypto.subtle.importKey("pkcs8", binaryKey, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["decrypt"]);
-        const encryptedData = Uint8Array.from(atob(encryptedBase64), c=>c.charCodeAt(0));
-        const decrypted = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, key, encryptedData);
-        return new TextDecoder().decode(decrypted);
+        try {
+            let pem = privateKeyPem;
+            pem = pem.replace(/-----BEGIN PRIVATE KEY-----/g, "");
+            pem = pem.replace(/-----END PRIVATE KEY-----/g, "");
+            pem = pem.replace(/\s/g, "");
+
+            const binaryKey = Uint8Array.from(atob(pem), c => c.charCodeAt(0));
+            const key = await crypto.subtle.importKey("pkcs8", binaryKey, {
+                name: "RSA-OAEP", hash: "SHA-256"
+            }, false, ["decrypt"]);
+
+            const encryptedData = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0));
+            const decrypted = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, key, encryptedData);
+            return new TextDecoder().decode(decrypted);
+        } catch (e) {
+            console.error("Decrypt error:", e);
+            return "[Ошибка]";
+        }
     }
 
     async function encryptWithPublicKey(plaintext, publicKeyPem) {
-        const pemHeader = "-----BEGIN PUBLIC KEY-----";
-        const pemFooter = "-----END PUBLIC KEY-----";
-        const pemContent = publicKeyPem.replace(pemHeader, "").replace(pemFooter, "").replace(/\s/g, "");
-        const binaryKey = Uint8Array.from(atob(pemContent), c=>c.charCodeAt(0));
-        const key = await crypto.subtle.importKey("spki", binaryKey, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
-        const encrypted = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, key, new TextEncoder().encode(plaintext));
-        return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+        try {
+            let pem = publicKeyPem;
+            pem = pem.replace(/-----BEGIN PUBLIC KEY-----/g, "");
+            pem = pem.replace(/-----END PUBLIC KEY-----/g, "");
+            pem = pem.replace(/\s/g, "");
+
+            const binaryKey = Uint8Array.from(atob(pem), c => c.charCodeAt(0));
+            const key = await crypto.subtle.importKey("spki", binaryKey, {
+                name: "RSA-OAEP", hash: "SHA-256"
+            }, false, ["encrypt"]);
+
+            const encrypted = await crypto.subtle.encrypt({
+                name: "RSA-OAEP"
+            }, key, new TextEncoder().encode(plaintext));
+
+            return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+        } catch (e) {
+            console.error("Encrypt error:", e);
+            throw e;
+        }
     }
 
-    async function sendEncryptedMessagesToMembers(chatId, membersKeys) {
-        const pending = pendingMessages.filter(p => p.chatId === chatId);
-        for (let p of pending) {
-            for (let member of membersKeys) {
-                const [username, pubKey] = Object.entries(member)[0];
-                const encrypted = await encryptWithPublicKey(p.messageText, pubKey);
-                await wsSend({ action: "send_message", token, to_username: username, message: encrypted, chat_id: chatId });
-            }
-        }
-        pendingMessages = pendingMessages.filter(p => p.chatId !== chatId);
-    }
+    // Остальные функции (generateRSAKeyPair, arrayBufferToPem, hasPrivateKey,
+    // showScreen, showError, renderChats, escapeHtml, appendMessage,
+    // startChatScreen, autoLogin, logout и т.д.) остаются без изменений
+    // ... (скопируйте их из вашего текущего файла)
 
     // ---------- RSA ключи ----------
     async function generateRSAKeyPair() {
@@ -630,42 +767,96 @@
     }
 
     function showError(msg, isReg, errorDivId = null) {
-        if (errorDivId) document.getElementById(errorDivId).innerText = msg || "";
-        else if (isReg) document.getElementById("reg-error").innerText = msg || "";
-        else document.getElementById("login-error").innerText = msg || "";
+        if (errorDivId) {
+            const el = document.getElementById(errorDivId);
+            if (el) el.innerText = msg || "";
+        } else if (isReg) {
+            const el = document.getElementById("reg-error");
+            if (el) el.innerText = msg || "";
+        } else {
+            const el = document.getElementById("login-error");
+            if (el) el.innerText = msg || "";
+        }
     }
 
+    // Обработчики событий
     document.getElementById("login-btn").onclick = () => {
         const email = document.getElementById("login-email").value;
         const pwd = document.getElementById("login-password").value;
         if (!email || !pwd) return showError("Заполните поля", false);
         wsSend({ action: "login", email, password: CryptoJS.SHA256(pwd).toString() });
     };
+
+
     document.getElementById("reg-btn").onclick = async () => {
         const nick = document.getElementById("reg-nick").value;
         const email = document.getElementById("reg-email").value;
         const pwd = document.getElementById("reg-password").value;
+
         if (!nick || !email || !pwd) return showError("Заполните поля", true);
         if (pwd.length < 8) return showError("Пароль не менее 8 символов", true);
-        wsSend({ action: "register", nickname: nick, email, password: CryptoJS.SHA256(pwd).toString() });
-    };
 
-    let publicKeyForReg = null;
-    async function autoLoginAfterReg() {
+        // Сначала генерируем ключи
+        console.log("Generating RSA keys...");
         const { privatePem, publicPem } = await generateRSAKeyPair();
         privateKeyPem = privatePem;
         publicKeyForReg = publicPem;
-        localStorage.setItem(`priv_${token}`, privatePem);
-        const code = parseInt(document.getElementById("code-input").value);
-        if (isNaN(code) || code.toString().length !== 6) return showError("Неверный код", false, "code-error");
-        wsSend({ action: "register_verification", token, code, key: publicPem });
-    }
+        console.log("RSA keys generated");
 
-    document.getElementById("verify-btn").onclick = () => {
-        const code = parseInt(document.getElementById("code-input").value);
-        if (isNaN(code) || code.toString().length !== 6) return showError("Неверный код", false, "code-error");
-        wsSend({ action: "register_verification", token, code, key: publicKeyForReg });
+        // Отправляем запрос на регистрацию
+        wsSend({
+            action: "register",
+            nickname: nick,
+            email: email,
+            password: CryptoJS.SHA256(pwd).toString()
+        });
     };
+
+
+    async function autoLoginAfterReg() {
+        const { privatePem, publicPem } = await generateRSAKeyPair();
+        privateKeyPem = privatePem;
+        publicKeyForReg = publicPem;  // Сохраняем публичный ключ
+        localStorage.setItem(`priv_${token}`, privatePem);
+        // Не вызываем autoLogin() здесь
+}
+
+    document.getElementById("verify-btn").onclick = async () => {
+        const code = document.getElementById("code-input").value;
+
+        // Проверяем код
+        if (!code || code.length !== 6 || !/^\d+$/.test(code)) {
+            showError("Введите 6-значный код", false, "code-error");
+            return;
+        }
+
+        // Используем token или pendingToken
+        const currentToken = token || pendingToken;
+
+        // Проверяем, что ключ существует
+        if (!publicKeyForReg) {
+            // Пытаемся загрузить ключ из localStorage
+            const savedKey = localStorage.getItem(`priv_${currentToken}`);
+            if (savedKey) {
+                console.log("Found saved key, using it");
+                // Нам нужен публичный ключ, но у нас есть только приватный
+                // Поэтому лучше пересоздать сессию
+                showError("Ошибка: ключ не найден. Пожалуйста, зарегистрируйтесь заново.", false, "code-error");
+                return;
+            }
+            showError("Ошибка: ключ не сгенерирован. Пожалуйста, зарегистрируйтесь заново.", false, "code-error");
+            return;
+        }
+
+        console.log("Sending verification with token:", currentToken, "code:", code);
+
+        await wsSend({
+            action: "register_verification",
+            token: currentToken,
+            code: parseInt(code),
+            key: publicKeyForReg
+        });
+};
 
     async function autoLogin() {
         const storedPriv = localStorage.getItem(`priv_${token}`);
@@ -675,24 +866,56 @@
 
     function startChatScreen() {
         if (chatsInterval) clearInterval(chatsInterval);
-        chatsInterval = setInterval(() => wsSend({ action: "get_chats", token }), 5000);
+        // Увеличиваем частоту обновления чатов до 2 секунд
+        chatsInterval = setInterval(() => wsSend({ action: "get_chats", token }), 2000);
         wsSend({ action: "get_chats", token });
         showScreen("chat-screen");
     }
 
     function renderChats() {
         const container = document.getElementById("chats-list");
+        if (!container) return;
         container.innerHTML = "";
         for (let chat of chatsList) {
             const div = document.createElement("div");
             div.className = "chat-item";
-            div.innerHTML = `<div class="chat-avatar">${chat.name.charAt(0).toUpperCase()}</div><div class="chat-name">${escapeHtml(chat.name)}</div>`;
-            div.onclick = () => openChat(chat.id);
+            div.style.display = "flex";
+            div.style.justifyContent = "space-between";
+            div.style.alignItems = "center";
+
+            const chatInfo = document.createElement("div");
+            chatInfo.style.display = "flex";
+            chatInfo.style.alignItems = "center";
+            chatInfo.style.gap = "12px";
+            chatInfo.style.cursor = "pointer";
+            chatInfo.style.flex = "1";
+            chatInfo.innerHTML = `
+                <div class="chat-avatar">${escapeHtml(chat.name.charAt(0).toUpperCase())}</div>
+                <div class="chat-name">${escapeHtml(chat.name)}</div>
+            `;
+            chatInfo.onclick = () => openChat(chat.id);
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            deleteBtn.style.background = "transparent";
+            deleteBtn.style.border = "none";
+            deleteBtn.style.color = "#ff7a7a";
+            deleteBtn.style.cursor = "pointer";
+            deleteBtn.style.padding = "8px";
+            deleteBtn.style.borderRadius = "50%";
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation();
+                deleteChat(chat.id, chat.name);
+            };
+
+            div.appendChild(chatInfo);
+            div.appendChild(deleteBtn);
             container.appendChild(div);
         }
     }
 
     function escapeHtml(str) {
+        if (!str) return "";
         return str.replace(/[&<>]/g, function(m) {
             if (m === '&') return '&amp;';
             if (m === '<') return '&lt;';
@@ -702,17 +925,23 @@
     }
 
     async function openChat(chatId) {
+        if (currentChatId === chatId) return;
         currentChatId = chatId;
-        document.getElementById("messages-scroll").innerHTML = "";
+        const container = document.getElementById("messages-scroll");
+        if (container) container.innerHTML = "";
+
         if (messagesInterval) clearInterval(messagesInterval);
+        // Увеличиваем частоту обновления сообщений до 1 секунды
         messagesInterval = setInterval(() => {
             if (currentChatId) wsSend({ action: "get_messages", token, chat_id: currentChatId });
-        }, 3000);
-        wsSend({ action: "get_messages", token, chat_id: chatId });
+        }, 1000);
+
+        await wsSend({ action: "get_messages", token, chat_id: chatId });
     }
 
     function appendMessage(sender, text, isOwn) {
         const container = document.getElementById("messages-scroll");
+        if (!container) return;
         const msgDiv = document.createElement("div");
         msgDiv.className = `message ${isOwn ? "message-own" : "message-other"}`;
         msgDiv.innerHTML = `<div class="message-name">${escapeHtml(sender)}</div><div>${escapeHtml(text)}</div>`;
@@ -720,19 +949,17 @@
         container.scrollTop = container.scrollHeight;
     }
 
-    document.getElementById("send-message-btn").onclick = async () => {
-        const msg = document.getElementById("message-input").value.trim();
-        if (!msg || !currentChatId) return;
-        pendingMessages.push({ chatId: currentChatId, messageText: msg });
-        wsSend({ action: "get_members_keys", token, chat_id: currentChatId });
-        document.getElementById("message-input").value = "";
-    };
+
+    document.getElementById("message-input").addEventListener("keypress", (e) => {
+        if (e.key === "Enter") document.getElementById("send-message-btn").click();
+    });
 
     document.getElementById("create-personal-btn").onclick = () => {
         const username = document.getElementById("personal-username").value;
         if (!username) return;
         wsSend({ action: "create_chat_with_user", token, username });
     };
+
     document.getElementById("create-group-btn").onclick = () => {
         const name = document.getElementById("group-name").value;
         const members = document.getElementById("group-members").value.split(",").map(s => s.trim());
@@ -749,6 +976,7 @@
         a.download = `key_${token}.key`;
         a.click();
     };
+
     document.getElementById("logout-btn").onclick = () => logout(false);
     document.getElementById("permanent-logout-btn").onclick = () => logout(true);
     document.getElementById("logout-after-import").onclick = () => logout(false);
@@ -757,7 +985,12 @@
         if (deleteKey && token) localStorage.removeItem(`priv_${token}`);
         localStorage.removeItem("token");
         localStorage.removeItem("nickname");
-        token = null; nickname = null; privateKeyPem = null;
+        token = null;
+        nickname = null;
+        privateKeyPem = null;
+        currentChatId = null;
+        pendingMessages = {};
+        processedMessages = new Set(); // Добавьте эту строку
         if (messagesInterval) clearInterval(messagesInterval);
         if (chatsInterval) clearInterval(chatsInterval);
         showScreen("auth-screen");
@@ -789,6 +1022,20 @@
             tab.classList.add("active");
         };
     });
+
+    async function regenerateKeyForExistingToken() {
+        const savedToken = localStorage.getItem("token");
+        if (savedToken && !privateKeyPem) {
+            const { privatePem, publicPem } = await generateRSAKeyPair();
+            privateKeyPem = privatePem;
+            publicKeyForReg = publicPem;
+            localStorage.setItem(`priv_${savedToken}`, privatePem);
+            token = savedToken;
+            return true;
+        }
+        return false;
+    }
+
     document.querySelectorAll("#add-tabs .tab").forEach(tab => {
         tab.onclick = () => {
             const isPersonal = tab.dataset.addtab === "personal";
@@ -799,6 +1046,7 @@
         };
     });
 
+    // Навигация
     document.getElementById("settings-btn").onclick = () => showScreen("settings-screen");
     document.getElementById("add-chat-btn").onclick = () => showScreen("add-chat-screen");
     document.getElementById("back-to-chat-from-add").onclick = () => showScreen("chat-screen");
@@ -811,8 +1059,18 @@
         const savedToken = localStorage.getItem("token");
         if (savedToken) {
             token = savedToken;
-            if (localStorage.getItem(`priv_${token}`)) autoLogin();
-            else showScreen("import-screen");
+            const savedKey = localStorage.getItem(`priv_${savedToken}`);
+            if (savedKey) {
+                privateKeyPem = savedKey;
+                // Нам нужен публичный ключ из приватного (сложно)
+                // Поэтому лучше при повторной попытке перегенерировать
+                regenerateKeyForExistingToken().then(() => {
+                    if (privateKeyPem) autoLogin();
+                    else showScreen("import-screen");
+                });
+            } else {
+                showScreen("import-screen");
+            }
         } else {
             showScreen("auth-screen");
         }

@@ -21,8 +21,8 @@ from cryptography.fernet import Fernet
 
 HOST = '127.0.0.1' # Был "130.12.45.26"
 PORT = 8765
-EMAIL = 'arlenemessengerg@gmail.com'
-EMAIL_PASS = 'pzzo urrd hjej arpw'
+EMAIL = 'mizukage.may@mail.ru'
+EMAIL_PASS = 'uGj6ZO7yhEZ1uBQrwV1w'
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
 
 CHATS_LOCATION = 'chats'
@@ -40,7 +40,7 @@ os.makedirs('db', exist_ok=True)
 FILES_END_FILE = 'files.json'
 
 connected_clients = set()
-email_server = None
+email_server = "smtp.mail.ru"
 CHATS_LOCATION = CHATS_LOCATION.rstrip('/')
 
 
@@ -68,6 +68,12 @@ def reg_verification(data: dict):
         session.close()
         return {"action": "register", "status": "error", "message": "Пользователь с такой почтой уже зарегистрирован"}
 
+    # Удаляем старую временную запись для этой почты (если есть)
+    old_temp = session.query(TempUser).filter(TempUser.email == email).first()
+    if old_temp:
+        session.delete(old_temp)
+        session.commit()
+
     session.close()
 
     code = random.randint(100000, 999999)
@@ -78,40 +84,24 @@ def reg_verification(data: dict):
     message["From"] = EMAIL
     message["To"] = email
     message["Subject"] = "Verification code"
-    body = 'Ваш код подтверждения: ' + str(code)
-    message.attach(MIMEText(body, "plain"))
-    body = 'Этот код будет действителен в течение 10 минут.'
+    body = f'Ваш код подтверждения: {code}\nЭтот код будет действителен в течение 10 минут.'
     message.attach(MIMEText(body, "plain"))
 
     send_email(message)
 
     session = db_session.create_session()
 
-    temp_user = session.query(TempUser).filter(TempUser.email == email).first()
+    temp_user = TempUser()
+    temp_user.email = email
+    temp_user.name = nickname
+    temp_user.hashed_password = password
+    temp_user.token = token
+    temp_user.verification_code = code
+    temp_user.die_time = die_time
 
-    if temp_user is not None:
-        temp_user.email = email
-        temp_user.name = nickname
-        temp_user.hashed_password = password
-        temp_user.token = token
-        temp_user.verification_code = code
-        temp_user.die_time = die_time
-
-        session.commit()
-        session.close()
-    else:
-        temp_user = TempUser()
-
-        temp_user.email = email
-        temp_user.name = nickname
-        temp_user.hashed_password = password
-        temp_user.token = token
-        temp_user.verification_code = code
-        temp_user.die_time = die_time
-
-        session.add(temp_user)
-        session.commit()
-        session.close()
+    session.add(temp_user)
+    session.commit()
+    session.close()
 
     return {"action": "register", "status": "OK", "token": token, "message": "Отправка кода подтверждения."}
 
@@ -121,21 +111,48 @@ def fin_reg(data: dict):
     code = data.get('code', None)
     key = data.get('key', None)
 
-    if token is None or code is None or key is None:
-        return {"action": "register_verification", "status": "error", "message": "Неправильный формат"}
+    print(f"[DEBUG] fin_reg received: token={token}, code={code}, key={'present' if key else 'None'}")
+
+    # Проверка на None с подробным сообщением
+    if token is None:
+        return {"action": "register_verification", "status": "error", "message": "Отсутствует токен"}
+    if code is None:
+        return {"action": "register_verification", "status": "error", "message": "Отсутствует код"}
+    if key is None:
+        return {"action": "register_verification", "status": "error", "message": "Отсутствует публичный ключ"}
 
     session = db_session.create_session()
 
+    # Ищем временного пользователя
     temp_user = session.query(TempUser).filter(TempUser.token == token).first()
 
-    session.close()
+    print(f"[DEBUG] temp_user found: {temp_user is not None}")
 
     if temp_user is None:
-        return {"action": "register_verification", "status": "error", "message": "Неправильный формат"}
+        session.close()
+        return {"action": "register_verification", "status": "error",
+                "message": "Сессия истекла или неверный токен. Зарегистрируйтесь заново."}
 
-    if temp_user.verification_code != code:
-        return {"action": "register_verification", "status": "error", "message": "Неверный код"}
+    # Проверяем код (сравниваем как int)
+    try:
+        code_int = int(code)
+        if temp_user.verification_code != code_int:
+            session.close()
+            return {"action": "register_verification", "status": "error",
+                    "message": f"Неверный код. Ожидался {temp_user.verification_code}, получен {code_int}"}
+    except (ValueError, TypeError):
+        session.close()
+        return {"action": "register_verification", "status": "error", "message": "Неверный формат кода"}
 
+    # Проверяем время жизни
+    if temp_user.die_time < int(time.time()):
+        session.delete(temp_user)
+        session.commit()
+        session.close()
+        return {"action": "register_verification", "status": "error",
+                "message": "Код подтверждения истек. Зарегистрируйтесь заново."}
+
+    # Создаем постоянного пользователя
     user = User()
     user.name = temp_user.name
     user.email = temp_user.email
@@ -143,7 +160,6 @@ def fin_reg(data: dict):
     user.hashed_password = temp_user.hashed_password
     user.public_key = key
 
-    session = db_session.create_session()
     session.delete(temp_user)
     session.add(user)
     session.commit()
@@ -820,49 +836,98 @@ async def handler(websocket):
     connected_clients.add(websocket)
     try:
         async for raw in websocket:
-            data = json.loads(FERNET_KEY.decrypt(raw).decode())
-            print(data)
+            # Проверяем тип полученных данных
+            if isinstance(raw, str):
+                encrypted_data = raw.encode('utf-8')
+            elif isinstance(raw, bytes):
+                encrypted_data = raw
+            else:
+                encrypted_data = bytes(raw)
+
+            try:
+                # Расшифровываем
+                decrypted_bytes = FERNET_KEY.decrypt(encrypted_data)
+                decrypted = decrypted_bytes.decode('utf-8')
+
+                # Удаляем PKCS7 padding (если есть)
+                # Python Fernet обычно сам удаляет padding, но на всякий случай
+                if decrypted and decrypted[-1] in '\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10':
+                    pad_len = ord(decrypted[-1])
+                    if 1 <= pad_len <= 16:
+                        # Проверяем, что все padding символы одинаковые
+                        if all(ord(c) == pad_len for c in decrypted[-pad_len:]):
+                            decrypted = decrypted[:-pad_len]
+
+                data = json.loads(decrypted)
+                print(f"Received: {data.get('action')} from {websocket.remote_address}")
+
+            except Exception as e:
+                print(f"Decryption error: {e}")
+                # Отправляем ошибку клиенту
+                error_response = {"status": "error", "message": f"Decryption failed: {str(e)}"}
+                await websocket.send(FERNET_KEY.encrypt(json.dumps(error_response).encode()))
+                continue
+
             action = data.get('action', None)
 
+            # Обработка действий
             if action == 'register':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(reg_verification(data), ensure_ascii=False).encode()))
+                response = reg_verification(data)
             elif action == 'register_verification':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(fin_reg(data), ensure_ascii=False).encode()))
+                print(f"[DEBUG] Calling fin_reg with data: {data}")
+                response = fin_reg(data)
+                print(f"[DEBUG] fin_reg response: {response}")
             elif action == 'login':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(login(data), ensure_ascii=False).encode()))
+                response = login(data)
             elif action == 'create_chat_with_user':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(create_chat_with_user(data), ensure_ascii=False).encode()))
+                response = create_chat_with_user(data)
             elif action == 'get_public_key':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_public_key(data), ensure_ascii=False).encode()))
+                response = get_public_key(data)
             elif action == 'send_message':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(send_message(data), ensure_ascii=False).encode()))
+                response = send_message(data)
             elif action == 'get_messages':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_messages(data), ensure_ascii=False).encode()))
+                response = get_messages(data)
             elif action == 'get_name':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_name(data), ensure_ascii=False).encode()))
+                response = get_name(data)
             elif action == 'get_chats':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_chats(data), ensure_ascii=False).encode()))
+                response = get_chats(data)
             elif action == 'get_members_keys':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(get_members_keys(data), ensure_ascii=False).encode()))
+                response = get_members_keys(data)
             elif action == 'create_group':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(create_group(data), ensure_ascii=False).encode()))
+                response = create_group(data)
             elif action == 'upload_avatar':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_avatar(data), ensure_ascii=False).encode()))
+                response = upload_avatar(data)
             elif action == 'download_avatar':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_avatar(data), ensure_ascii=False).encode()))
+                response = download_avatar(data)
             elif action == 'download_chat_image':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(download_chat_image(data), ensure_ascii=False).encode()))
+                response = download_chat_image(data)
             elif action == 'upload_file':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(upload_file(data), ensure_ascii=False).encode()))
+                response = upload_file(data)
             elif action == 'download_file':
-                for i in download_file(data):
-                    await websocket.send(FERNET_KEY.encrypt(json.dumps(i, ensure_ascii=False).encode()))
+                responses = download_file(data)
+                for resp in responses:
+                    encrypted_resp = FERNET_KEY.encrypt(json.dumps(resp, ensure_ascii=False).encode())
+                    await websocket.send(encrypted_resp.decode())
+                continue
             elif action == 'send_file':
-                await websocket.send(FERNET_KEY.encrypt(json.dumps(send_file(data), ensure_ascii=False).encode()))
+                response = send_file(data)
             else:
-                await websocket.send(json.dumps({"status": "error", "message": "Неизвестное действие"}, ensure_ascii=False))
+                response = {"status": "error", "message": "Неизвестное действие"}
+
+            # Отправляем ответ
+            if response:
+                try:
+                    encrypted_response = FERNET_KEY.encrypt(json.dumps(response, ensure_ascii=False).encode())
+                    await websocket.send(encrypted_response.decode())
+                except Exception as e:
+                    print(f"Response send error: {e}")
+
     except websockets.exceptions.ConnectionClosed:
-        pass
+        print(f"Connection closed")
+    except Exception as e:
+        print(f"Handler error: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         connected_clients.discard(websocket)
 
@@ -870,7 +935,7 @@ async def handler(websocket):
 def start_email_server():
     global email_server
 
-    email_server = smtplib.SMTP('smtp.gmail.com', 587)
+    email_server = smtplib.SMTP('smtp.mail.ru', 587)
     email_server.starttls()
     email_server.login(EMAIL, EMAIL_PASS)
 
@@ -889,6 +954,59 @@ def send_email(message: MIMEMultipart):
             print('Успех!')
         except Exception:
             print('Неудача.')
+
+
+def delete_chat(data: dict):
+    token = data.get('token', None)
+    chat_id = data.get('chat_id', None)
+
+    if token is None or chat_id is None:
+        return {"action": "delete_chat", "status": "error", "message": "Неверный формат"}
+
+    session = db_session.create_session()
+    user = session.query(User).filter(User.token == token).first()
+
+    if user is None:
+        session.close()
+        return {"action": "delete_chat", "status": "error", "message": "Неверный токен"}
+
+    chat = session.query(Chat).filter(Chat.id == chat_id).first()
+
+    if chat is None:
+        session.close()
+        return {"action": "delete_chat", "status": "error", "message": "Чат не найден"}
+
+    # Проверяем, является ли пользователь создателем чата
+    if chat.created_by != user.id:
+        session.close()
+        return {"action": "delete_chat", "status": "error", "message": "Только создатель чата может удалить его"}
+
+    # Удаляем файл с сообщениями
+    messages_file = os.path.join(CHATS_DATA_LOCATION, f"{chat_id}.json")
+    if os.path.exists(messages_file):
+        os.remove(messages_file)
+
+    # Удаляем изображение группы (если есть)
+    group_image = os.path.join(GROUP_IMAGES_LOCATION, f"{chat_id}.png")
+    if os.path.exists(group_image):
+        os.remove(group_image)
+
+    # Удаляем чат из списков чатов всех участников
+    members = chat.members.split(';')
+    for member_id in members:
+        member = session.query(User).filter(User.id == int(member_id)).first()
+        if member and member.chats:
+            chats_list = member.chats.split(';')
+            if str(chat_id) in chats_list:
+                chats_list.remove(str(chat_id))
+                member.chats = ';'.join(chats_list) if chats_list else None
+
+    # Удаляем сам чат
+    session.delete(chat)
+    session.commit()
+    session.close()
+
+    return {"action": "delete_chat", "status": "OK", "message": "Чат удален", "chat_id": chat_id}
 
 
 async def main():
