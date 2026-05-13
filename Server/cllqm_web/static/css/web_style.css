@@ -23,8 +23,8 @@ button.secondary { background: #3a3a45; }
 .chat-header { padding: 16px; background: #1a1a24; border-bottom: 1px solid #2a2a35; font-weight: bold; }
 .messages-container { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .message { max-width: 70%; padding: 8px 12px; border-radius: 18px; word-wrap: break-word; }
-.message.own { align-self: flex-end; background: #751fff; }
-.message.other { align-self: flex-start; background: #2a2a35; }
+.message.own { align-self: flex-end; background: #2a2a35; }
+.message.other { align-self: flex-start; background: #751fff; }
 .message .author { font-size: 12px; margin-bottom: 4px; opacity: 0.8; }
 .message-input-area { display: flex; padding: 16px; background: #1a1a24; border-top: 1px solid #2a2a35; gap: 12px; }
 .message-input-area textarea { flex: 1; margin: 0; background: #2a2a35; resize: none; }

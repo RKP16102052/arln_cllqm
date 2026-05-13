@@ -925,7 +925,7 @@
         const container = document.getElementById("messages-scroll");
         if (!container) return;
         const msgDiv = document.createElement("div");
-        msgDiv.className = `message ${isOwn ? "message-own" : "message-other"}`;
+        msgDiv.className = `message ${isOwn ? "message-other" : "message-own"}`;
         msgDiv.innerHTML = `<div class="message-name">${escapeHtml(sender)}</div><div>${escapeHtml(text)}</div>`;
         container.appendChild(msgDiv);
         container.scrollTop = container.scrollHeight;

@@ -135,7 +135,7 @@ def fin_reg(data: dict):
         if temp_user.verification_code != code_int:
             session.close()
             return {"action": "register_verification", "status": "error",
-                    "message": f"Неверный код. Ожидался {temp_user.verification_code}, получен {code_int}"}
+                    "message": f"Неверный код"}
     except (ValueError, TypeError):
         session.close()
         return {"action": "register_verification", "status": "error", "message": "Неверный формат кода"}
