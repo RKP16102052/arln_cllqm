@@ -63,6 +63,17 @@ body {
     box-shadow: 0 12px 28px rgba(117, 31, 255, 0.4);
 }
 
+.btn-outline {
+    background: transparent;
+    border: 2px solid #751fff;
+    color: #751fff;
+}
+
+.btn-outline:hover {
+    background: #751fff;
+    color: white;
+}
+
 .version-badge {
     margin-top: 24px;
     font-size: 0.85rem;
@@ -234,9 +245,185 @@ footer {
     font-size: 0.85rem;
 }
 
+/* ========== Стили для страницы доната ========== */
+.donate-methods {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 24px;
+    margin: 40px 0;
+}
+
+.donate-card {
+    background: linear-gradient(135deg, #1a0b2e 0%, #2d1b4e 100%);
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+    flex: 1;
+    min-width: 220px;
+    text-align: center;
+    transition: transform 0.2s, border-color 0.2s;
+    border: 1px solid rgba(117, 31, 255, 0.3);
+}
+
+.donate-card:hover {
+    transform: translateY(-5px);
+    border-color: #751fff;
+    box-shadow: 0 12px 28px rgba(117, 31, 255, 0.2);
+}
+
+.donate-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.donate-card h3 {
+    margin: 0 0 12px 0;
+    color: #ededee;
+    font-size: 1.5rem;
+}
+
+.address {
+    background: #0a0a0f;
+    padding: 12px;
+    border-radius: 16px;
+    font-family: monospace;
+    word-break: break-all;
+    font-size: 14px;
+    margin: 16px 0;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid #2a2a35;
+    color: #b77cff;
+}
+
+.address:hover {
+    background: #1a1a24;
+    border-color: #751fff;
+}
+
+.copy-toast {
+    visibility: hidden;
+    min-width: 200px;
+    background-color: #1a1a24;
+    color: #fff;
+    text-align: center;
+    border-radius: 8px;
+    padding: 12px;
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    border: 1px solid #751fff;
+}
+
+.copy-toast.show {
+    visibility: visible;
+    opacity: 1;
+}
+
+.download-section {
+    background: #111118;
+    border-radius: 32px;
+    padding: 32px;
+    margin: 40px 0;
+    text-align: center;
+    border: 1px solid #2a2a35;
+}
+
+.auto-download-note {
+    background: #1a2a1a;
+    color: #a0d6a0;
+    padding: 12px 20px;
+    border-radius: 16px;
+    margin-bottom: 20px;
+    text-align: center;
+    border-left: 4px solid #4caf50;
+}
+
+hr {
+    margin: 40px 0;
+    border: none;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #2a2a35, transparent);
+}
+
+/* ========== Стили для промежуточной страницы (redirect_with_download) ========== */
+.redirect-message {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #0a0a0f;
+}
+
+.redirect-card {
+    text-align: center;
+    background: #111118;
+    padding: 48px;
+    border-radius: 32px;
+    border: 1px solid #2a2a35;
+    max-width: 500px;
+    width: 90%;
+}
+
+.spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #2a2a35;
+    border-top: 4px solid #751fff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 24px auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* ========== Стили для страницы выбора платформы (choose_platform) ========== */
+.platform-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 40px;
+}
+
+.platform-card {
+    background: #111118;
+    border-radius: 24px;
+    padding: 32px;
+    text-align: center;
+    flex: 1;
+    min-width: 200px;
+    border: 1px solid #2a2a35;
+    transition: transform 0.2s;
+}
+
+.platform-card:hover {
+    transform: translateY(-5px);
+    border-color: #751fff;
+}
+
+.platform-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+/* ========== Адаптивность ========== */
 @media (max-width: 768px) {
     .hero h1 { font-size: 2.5rem; }
     .tagline { font-size: 1rem; }
     .features { gap: 20px; }
     .install-steps { padding: 32px; }
+    .donate-methods { flex-direction: column; }
+    .donate-card { min-width: auto; }
+    .redirect-card { padding: 32px; }
+    .platform-buttons { flex-direction: column; }
 }
