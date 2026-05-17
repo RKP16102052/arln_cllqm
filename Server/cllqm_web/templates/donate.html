@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поддержка Arlene Colloquium</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+	<link rel="icon" href="static/favicon.ico" type="image/x-icon">
+    
+</head>
+<body>
+    <div class="hero" style="padding-bottom: 40px;">
+        <div class="container">
+            <h1>💚 Спасибо за выбор Arlene Colloquium</h1>
+            <p class="tagline">Ваше скачивание уже началось. Поддержите проект — помогите нам оставаться свободными и безопасными!</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Уведомление об авто-скачивании -->
+        <div class="auto-download-note" id="autoDownloadNote">
+            ⬇️ Файл <strong>{{ platform_name }} {{ file_ext }}</strong> скачивается автоматически...<br>
+            Если загрузка не началась, <a href="{{ download_url }}" id="manualDownloadLink">нажмите здесь</a>.
+        </div>
+
+        <!-- Блок доната -->
+        <div class="donate-methods">
+            <div class="donate-card">
+                <div class="donate-icon">☕</div>
+                <h3>Перевод на карту</h3>
+                <p>Карта OZON Банк: 2204 3203 7300 3062</p>
+				<p>Карта ТБанк: 2200 7021 7749 8891</p>
+				<p>Карта ВТБ: 2200 2418 5938 9862</p>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin: 20px 0 40px;">
+            <p style="font-size: 1.1rem;">✨ Каждый донат идёт на развитие, серверы и новые функции ✨</p>
+        </div>
+
+        <hr>
+
+        <footer>
+            <p>© 2026 Arlene Technologies. Мессенджер с открытым исходным кодом.</p>
+        </footer>
+    </div>
+
+    <div id="copyToast" class="copy-toast">Адрес скопирован!</div>
+
+    <script>
+        // Автоматически запускаем скачивание, как только страница загрузится
+        window.addEventListener('DOMContentLoaded', function() {
+            // Используем скрытый iframe или просто window.location.href
+            // Чтобы не покидать страницу доната, используем iframe
+            var iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = "{{ download_url }}";
+            document.body.appendChild(iframe);
+            setTimeout(function() {
+                document.body.removeChild(iframe);
+            }, 5000);
+        });
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const toast = document.getElementById('copyToast');
+                toast.classList.add('show');
+                setTimeout(() => toast.classList.remove('show'), 2000);
+            }).catch(() => alert('Не удалось скопировать адрес. Скопируйте вручную.'));
+        }
+    </script>
+</body>
+</html>
