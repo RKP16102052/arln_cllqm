@@ -21,8 +21,8 @@ from cryptography.fernet import Fernet
 
 HOST = '127.0.0.1' # Был "130.12.45.26"
 PORT = 8765
-EMAIL = 'mizukage.may@mail.ru'
-EMAIL_PASS = 'uGj6ZO7yhEZ1uBQrwV1w'
+EMAIL = 'arlenemessengerg@gmail.com'
+EMAIL_PASS = 'pzzo urrd hjej arpw'
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
 
 CHATS_LOCATION = 'chats'
@@ -40,7 +40,7 @@ os.makedirs('db', exist_ok=True)
 FILES_END_FILE = 'files.json'
 
 connected_clients = set()
-email_server = "smtp.mail.ru"
+email_server = "smtp.gmail.com"
 CHATS_LOCATION = CHATS_LOCATION.rstrip('/')
 
 
@@ -286,58 +286,57 @@ def send_message(data: dict):
         return {"action": "send_message", "status": "error", "message": "Неверный формат"}
 
     session = db_session.create_session()
-
     chat = session.query(Chat).filter(Chat.id == chat_id).first()
 
     if chat is None:
         session.close()
         return {"action": "send_message", "status": "error", "message": "Неверный id чата"}
 
-    members = chat.members
-
     user1 = session.query(User).filter(User.token == token).first()
-
-    if user1 is None:
-        session.close()
-        return {"action": "send_message", "status": "error", "message": "Неверный токен"}
-
     user2 = session.query(User).filter(User.name == to_username).first()
-
     session.close()
 
-    if user2 is None:
-        return {"action": "send_message", "status": "error", "message": "Неверный токен"}
-
-    if str(user1.id) not in members or str(user2.id) not in members:
-        return {"action": "send_message", "status": "error", "message": "Недостаточно прав"}
+    if user1 is None or user2 is None:
+        return {"action": "send_message", "status": "error", "message": "Пользователь не найден"}
 
     with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'r', encoding='UTF-8') as file:
         chat_data = json.load(file)
 
+    current_time = time.time()
+
+    msg_for_sender = {
+        'from': user1.name,
+        'to': user1.token,
+        'type': 'text',
+        'message': message,
+        'time': current_time
+    }
+
+    msg_for_receiver = {
+        'from': user1.name,
+        'to': user2.token,
+        'type': 'text',
+        'message': message,
+        'time': current_time
+    }
+
+    chat_data['data'].append(msg_for_sender)
+    chat_data['data'].append(msg_for_receiver)
+
     with open(os.path.join(CHATS_DATA_LOCATION, str(chat_id) + '.json'), 'w', encoding='UTF-8') as file:
-        chat_message = {'from': user1.name,
-                        'to': user2.token,
-                        'type': 'text',
-                        'message': message,
-                        'time': time.time()}
+        json.dump(chat_data, file, indent=4, ensure_ascii=False)
 
-        chat_data['data'].append(chat_message)
-
-        json.dump(chat_data, file, indent=4)
-
-    return {"action": "send_message", "status": "OK", "message": message, "chat_id": chat_id}
+    return {"action": "send_message", "status": "OK", "message": "Успех", "chat_id": chat_id}
 
 
 def get_messages(data: dict):
     token = data.get('token', None)
     chat_id = data.get('chat_id', None)
-    last_time = data.get('time', None)
 
     if token is None or chat_id is None:
         return {"action": "get_messages", "status": "error", "message": "Неверный формат"}
 
     session = db_session.create_session()
-
     user = session.query(User).filter(User.token == token).first()
 
     if user is None:
@@ -352,28 +351,15 @@ def get_messages(data: dict):
         chat_data = json.load(file)
 
     fin = []
-
-    if last_time is None:
-        for i in chat_data['data']:
-            if i['to'] == token:
-                now = {"from": i["from"], "message": i["message"], "time": i["time"], "type": i['type']}
-
-                if now['type'] == 'file':
-                    now['file'] = i['file']
-
-                fin.append(now)
-    else:
-        for i in chat_data['data']:
-            if i['to'] == token and i['time'] > last_time:
-                now = {"from": i["from"], "message": i["message"], "time": i["time"], "type": i['type']}
-
-                if now['type'] == 'file':
-                    now['file'] = i['file']
-
-                fin.append(now)
+    for i in chat_data['data']:
+        fin.append({
+            "from": i["from"],
+            "message": i["message"],
+            "time": i["time"],
+            "type": i['type']
+        })
 
     session.close()
-
     return {"action": "get_messages", "status": "OK", "message": "Успех", "chat_id": chat_id, "data": fin}
 
 
@@ -921,7 +907,7 @@ async def handler(websocket):
 def start_email_server():
     global email_server
 
-    email_server = smtplib.SMTP('smtp.mail.ru', 587)
+    email_server = smtplib.SMTP('smtp.gmail.com', 587)
     email_server.starttls()
     email_server.login(EMAIL, EMAIL_PASS)
 
