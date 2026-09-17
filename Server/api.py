@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, jsonify
 from server import (reg_verification, fin_reg, login, create_chat_with_user, create_group, get_public_key,
                    send_message, get_messages, get_name, get_chats, get_members_keys, upload_avatar,
@@ -212,4 +213,4 @@ def web_send_file():
 
 
 if __name__ == '__main__':
-    app.run(port=8080, host='127.0.0.1')
+    app.run(port=int(os.environ.get('ARLENE_API_PORT', 8080)), host=os.environ.get('ARLENE_API_HOST', '0.0.0.0'))

@@ -11,6 +11,7 @@ from kivymd.uix.textfield import MDTextField
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.tab import MDTabsBase
 from kivymd.uix.tab import MDTabs
+from kivymd.uix.menu import MDDropdownMenu
 from kivy.uix.image import Image
 from kivymd.uix.dialog import MDDialog
 from kivy.core.window import Window
@@ -36,9 +37,14 @@ import io
 import uuid
 import shutil
 
+from server_deploy import deploy_new_server, ping_server
 
-HOST = "130.12.45.26"  # Был "130.12.45.26"
-PORT = 8765
+
+DEFAULT_HOST = "130.12.45.26"  # адрес глобальной сети по умолчанию
+DEFAULT_PORT = 8765
+
+HOST = DEFAULT_HOST
+PORT = DEFAULT_PORT
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
 
 WEBSOCKET_URL = f"ws://{HOST}:{PORT}"
@@ -78,6 +84,67 @@ CHATS_FILE = os.path.join(ARLENE_DIR, 'chats.json')
 AVATAR_LOCATION = os.path.join(ARLENE_DIR, 'avatar.png')
 AVATAR_TIME_LOCATION = os.path.join(ARLENE_DIR, 'avatar_time')
 IMAGES_TIME_FILE = os.path.join(ARLENE_DIR, 'images_time.json')
+SERVERS_FILE = os.path.join(ARLENE_DIR, 'servers.json')
+
+GLOBAL_SERVER_ID = 'global'
+
+
+def load_servers_config():
+    """Список пользовательских серверов (подсетей) + какой сейчас активен."""
+    if os.path.exists(SERVERS_FILE):
+        try:
+            with open(SERVERS_FILE) as file:
+                data = json.load(file)
+
+            data.setdefault('servers', [])
+            data.setdefault('active', GLOBAL_SERVER_ID)
+            return data
+        except Exception:
+            pass
+
+    return {'servers': [], 'active': GLOBAL_SERVER_ID}
+
+
+def save_servers_config(data):
+    with open(SERVERS_FILE, 'w') as file:
+        json.dump(data, file)
+
+
+def add_server_to_config(host, port, name=None):
+    data = load_servers_config()
+
+    server_id = str(uuid.uuid4())
+    entry = {
+        'id': server_id,
+        'name': name or host,
+        'host': host,
+        'port': port,
+    }
+
+    data['servers'].append(entry)
+    data['active'] = server_id
+    save_servers_config(data)
+
+    return entry
+
+
+def set_active_server(server_id):
+    data = load_servers_config()
+    data['active'] = server_id
+    save_servers_config(data)
+
+
+def get_active_server():
+    data = load_servers_config()
+
+    if data['active'] == GLOBAL_SERVER_ID:
+        return {'id': GLOBAL_SERVER_ID, 'name': 'Глобальная сеть', 'host': DEFAULT_HOST, 'port': DEFAULT_PORT}
+
+    for server in data['servers']:
+        if server['id'] == data['active']:
+            return server
+
+    return {'id': GLOBAL_SERVER_ID, 'name': 'Глобальная сеть', 'host': DEFAULT_HOST, 'port': DEFAULT_PORT}
 
 
 class ChatItem(MDBoxLayout, MDFlatButton):
@@ -293,15 +360,33 @@ class AuthScreen(MDScreen):
 
         root = MDBoxLayout(orientation="vertical", padding=20, spacing=10)
 
-        # Заголовок
+        # Верхняя строка: заголовок + иконка выбора сервера/подсети справа
+        top_row = MDBoxLayout(orientation="horizontal", size_hint_y=None, height="48dp")
+
         header_label = MDLabel(
             text="Добро пожаловать!",
             halign="center",
             font_style="H5",
-            size_hint_y=None,
-            height="48dp"
         )
-        root.add_widget(header_label)
+
+        self.server_button = MDIconButton(icon="server-network")
+        self.server_button.on_release = lambda: self.open_server_menu(self.server_button)
+
+        top_row.add_widget(MDBoxLayout(size_hint_x=None, width="48dp"))
+        top_row.add_widget(header_label)
+        top_row.add_widget(self.server_button)
+
+        root.add_widget(top_row)
+
+        self.active_server_label = MDLabel(
+            text=f"Сеть: {get_active_server()['name']}",
+            halign="center",
+            theme_text_color="Secondary",
+            font_style="Caption",
+            size_hint_y=None,
+            height="24dp",
+        )
+        root.add_widget(self.active_server_label)
 
         # Tabs: Авторизация / Регистрация
         tabs = MDTabs()
@@ -467,6 +552,189 @@ class AuthScreen(MDScreen):
 
     def send_to_websocket(self, payload):
         return self.app.send_to_websocket(payload)
+
+    # ---------- Выбор сети / подсети сервера ----------
+
+    def open_server_menu(self, caller):
+        servers_data = load_servers_config()
+        active_id = servers_data['active']
+
+        menu_items = [{
+            "text": "Глобальная сеть" + (" ✓" if active_id == GLOBAL_SERVER_ID else ""),
+            "viewclass": "OneLineListItem",
+            "on_release": lambda: self.pick_server(GLOBAL_SERVER_ID),
+        }]
+
+        for server in servers_data['servers']:
+            mark = " ✓" if active_id == server['id'] else ""
+            menu_items.append({
+                "text": f"{server['name']}{mark}",
+                "viewclass": "OneLineListItem",
+                "on_release": lambda sid=server['id']: self.pick_server(sid),
+            })
+
+        menu_items.append({
+            "text": "Добавить существующий сервер",
+            "viewclass": "OneLineListItem",
+            "on_release": self.open_add_existing_dialog,
+        })
+        menu_items.append({
+            "text": "Добавить новый сервер",
+            "viewclass": "OneLineListItem",
+            "on_release": self.open_add_new_dialog,
+        })
+
+        self.server_menu = MDDropdownMenu(caller=caller, items=menu_items, width_mult=4)
+        self.server_menu.open()
+
+    def pick_server(self, server_id):
+        if hasattr(self, 'server_menu'):
+            self.server_menu.dismiss()
+
+        set_active_server(server_id)
+        server = get_active_server()
+        self.active_server_label.text = f"Сеть: {server['name']}"
+        self.app.switch_server(server['host'], server['port'])
+
+    # ---------- Добавить существующий сервер ----------
+
+    def open_add_existing_dialog(self, *args):
+        if hasattr(self, 'server_menu'):
+            self.server_menu.dismiss()
+
+        self.existing_host_field = MDTextField(hint_text="IP-адрес сервера")
+        self.existing_port_field = MDTextField(hint_text="Порт", text=str(DEFAULT_PORT))
+        self.existing_error_label = MDLabel(text='', theme_text_color="Error", size_hint_y=None, height="24dp")
+
+        content = MDBoxLayout(orientation="vertical", spacing=10, adaptive_height=True, padding=(0, 10))
+        content.add_widget(self.existing_host_field)
+        content.add_widget(self.existing_port_field)
+        content.add_widget(self.existing_error_label)
+
+        self.dialog = MDDialog(
+            title="Добавить существующий сервер",
+            type="custom",
+            content_cls=content,
+            buttons=[
+                MDFlatButton(text="Добавить", on_release=lambda x: self.confirm_add_existing()),
+                MDFlatButton(text="Отмена", on_release=lambda x: self.dialog.dismiss()),
+            ],
+        )
+        self.dialog.open()
+
+    def confirm_add_existing(self):
+        host = self.existing_host_field.text.strip()
+        port_text = self.existing_port_field.text.strip() or str(DEFAULT_PORT)
+
+        if not host:
+            self.existing_error_label.text = "Введите IP-адрес."
+            return
+
+        if not port_text.isdigit():
+            self.existing_error_label.text = "Порт должен быть числом."
+            return
+
+        port = int(port_text)
+
+        self.existing_error_label.text = "Проверка подключения..."
+
+        def worker():
+            reachable = ping_server(host, port)
+            Clock.schedule_once(lambda dt: self._finish_add_existing(host, port, reachable))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_add_existing(self, host, port, reachable):
+        if not reachable:
+            self.existing_error_label.text = (
+                "Не удалось подключиться к этому адресу и порту. "
+                "Всё равно добавить в список?"
+            )
+            # Разрешаем добавить и недоступный сейчас сервер (например, временно выключен)
+            self.dialog.buttons[0].text = "Добавить всё равно"
+            self.dialog.buttons[0].on_release = lambda x: self._save_existing(host, port)
+            return
+
+        self._save_existing(host, port)
+
+    def _save_existing(self, host, port):
+        self.dialog.dismiss()
+        entry = add_server_to_config(host, port)
+        self.active_server_label.text = f"Сеть: {entry['name']}"
+        self.app.switch_server(entry['host'], entry['port'])
+
+    # ---------- Добавить новый сервер (установка ПО) ----------
+
+    def open_add_new_dialog(self, *args):
+        if hasattr(self, 'server_menu'):
+            self.server_menu.dismiss()
+
+        self.new_host_field = MDTextField(hint_text="IP-адрес машины")
+        self.new_login_field = MDTextField(hint_text="Логин администратора (SSH)")
+        self.new_password_field = MDTextField(hint_text="Пароль администратора (SSH)", password=True)
+        self.new_port_field = MDTextField(hint_text="Порт мессенджера", text=str(DEFAULT_PORT))
+        self.new_error_label = MDLabel(text='', theme_text_color="Error", size_hint_y=None, height="24dp")
+
+        content = MDBoxLayout(orientation="vertical", spacing=10, adaptive_height=True, padding=(0, 10))
+        content.add_widget(self.new_host_field)
+        content.add_widget(self.new_login_field)
+        content.add_widget(self.new_password_field)
+        content.add_widget(self.new_port_field)
+        content.add_widget(self.new_error_label)
+
+        self.dialog = MDDialog(
+            title="Добавить новый сервер",
+            type="custom",
+            content_cls=content,
+            buttons=[
+                MDFlatButton(text="Установить", on_release=lambda x: self.confirm_add_new()),
+                MDFlatButton(text="Отмена", on_release=lambda x: self.dialog.dismiss()),
+            ],
+        )
+        self.dialog.open()
+
+    def confirm_add_new(self):
+        host = self.new_host_field.text.strip()
+        login = self.new_login_field.text.strip()
+        password = self.new_password_field.text
+        port_text = self.new_port_field.text.strip() or str(DEFAULT_PORT)
+
+        if not host or not login or not password:
+            self.new_error_label.text = "Заполните IP, логин и пароль."
+            return
+
+        if not port_text.isdigit():
+            self.new_error_label.text = "Порт должен быть числом."
+            return
+
+        port = int(port_text)
+
+        self.new_error_label.text = "Подключение по SSH..."
+        self.dialog.buttons[0].disabled = True
+
+        def progress(msg):
+            Clock.schedule_once(lambda dt: setattr(self.new_error_label, 'text', msg))
+
+        def worker():
+            success, message = deploy_new_server(host, login, password, port=port, progress_cb=progress)
+            Clock.schedule_once(lambda dt: self._finish_add_new(success, message, host, port))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_add_new(self, success, message, host, port):
+        self.dialog.buttons[0].disabled = False
+
+        if not success:
+            self.new_error_label.text = message
+            return
+
+        self.dialog.dismiss()
+        entry = add_server_to_config(host, port)
+        self.active_server_label.text = f"Сеть: {entry['name']}"
+        self.app.switch_server(entry['host'], entry['port'])
+
+        self.dialog = MDDialog(title="Новый сервер", text=message)
+        self.dialog.open()
 
     def got_token_reg(self, token):
         with open(TOKEN_FILE, 'w') as file:
@@ -1576,10 +1844,38 @@ class ScreenManager(MDScreenManager):
 
 
 class ChatApp(MDApp):
+    def switch_server(self, host, port):
+        """Переключает мессенджер на другой сервер (другую подсеть).
+        Это отдельная база пользователей, поэтому фактически сбрасывает сессию."""
+        global HOST, PORT, WEBSOCKET_URL
+        HOST = host
+        PORT = port
+        WEBSOCKET_URL = f"ws://{host}:{port}"
+
+        self.token = None
+        self.nickname = None
+        self.private_key = None
+
+        try:
+            if self.ws:
+                self.ws.close()
+        except Exception:
+            pass
+
+        self.sm.current = 'auth'
+        self.start_websocket()
+
     def build(self):
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Purple"
         self.theme_cls.primary_hue = '800'
+
+        # Подхватываем последний выбранный сервер (подсеть), если он есть
+        global HOST, PORT, WEBSOCKET_URL
+        active_server = get_active_server()
+        HOST = active_server['host']
+        PORT = active_server['port']
+        WEBSOCKET_URL = f"ws://{HOST}:{PORT}"
 
         self.nickname = None
         self.token = None

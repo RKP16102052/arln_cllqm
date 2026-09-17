@@ -19,8 +19,8 @@ from data import db_session
 from cryptography.fernet import Fernet
 
 
-HOST = '127.0.0.1' # Был "130.12.45.26"
-PORT = 8765
+HOST = os.environ.get('ARLENE_HOST', '0.0.0.0')
+PORT = int(os.environ.get('ARLENE_PORT', 8765))
 EMAIL = 'arlenemessengerg@gmail.com'
 EMAIL_PASS = 'pzzo urrd hjej arpw'
 FERNET_KEY = Fernet(b'b1hj9pFchWx8sOZ1oqVN3cOxLSgvcPTPUdhbS_EM5d4=')
