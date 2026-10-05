@@ -40,7 +40,7 @@ import shutil
 from server_deploy import deploy_new_server, ping_server
 
 
-DEFAULT_HOST = "130.12.45.26"  # адрес глобальной сети по умолчанию
+DEFAULT_HOST = "45.81.154.76"  # адрес глобальной сети по умолчанию
 DEFAULT_PORT = 8765
 
 HOST = DEFAULT_HOST
@@ -1468,7 +1468,7 @@ class SettingsScreen(MDScreen):
         if os.path.exists(AVATAR_LOCATION):
             path = AVATAR_LOCATION
         else:
-            path = 'default.png'
+            path = '../../../../media/alex/KINGSTON/arln_cllqm/default.png'
 
         self.image = Image(source=path, size_hint=(1, 1))
         self.image.allow_stretch = True
